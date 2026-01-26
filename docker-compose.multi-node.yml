@@ -1,0 +1,17 @@
+# Docker Compose override for PARALLEL NODE fetching
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.multi-node.yml up -d
+#
+# This connects ergo-index to multiple public nodes for faster parallel syncing.
+# Note: Public nodes may have rate limits or be occasionally unavailable.
+
+version: "3.8"
+
+services:
+  ergo-index:
+    environment:
+      # Multiple nodes for parallel fetching (comma-separated)
+      - ERGO_NODES=http://213.239.193.208:9053,http://159.65.11.55:9053,http://165.227.26.175:9053
+      # Increase batch size for faster syncing with multiple nodes
+      - SYNC_BATCH_SIZE=500

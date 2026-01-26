@@ -1,0 +1,63 @@
+[package]
+name = "ergo-index"
+version = "0.1.0"
+edition = "2021"
+description = "Lightweight Ergo blockchain indexer and explorer API"
+license = "MIT"
+repository = "https://github.com/andrehafner/indexed_node_explorer_replacement"
+
+[dependencies]
+# Web framework
+axum = { version = "0.7", features = ["macros", "ws"] }
+tower = { version = "0.4", features = ["full"] }
+tower-http = { version = "0.5", features = ["fs", "cors", "trace", "compression-gzip"] }
+
+# Async runtime
+tokio = { version = "1", features = ["full"] }
+
+# Database
+duckdb = { version = "0.10", features = ["bundled"] }
+r2d2 = "0.8"
+r2d2-duckdb = "0.1"
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+# HTTP client for node communication
+reqwest = { version = "0.11", features = ["json", "rustls-tls"], default-features = false }
+
+# Utilities
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+chrono = { version = "0.4", features = ["serde"] }
+hex = "0.4"
+base64 = "0.21"
+blake2 = "0.10"
+sha2 = "0.10"
+
+# CLI
+clap = { version = "4", features = ["derive", "env"] }
+
+# Config
+config = "0.14"
+dotenvy = "0.15"
+
+# Async utilities
+futures = "0.3"
+async-stream = "0.3"
+tokio-stream = "0.1"
+
+# OpenAPI/Swagger
+utoipa = { version = "4", features = ["axum_extras"] }
+utoipa-swagger-ui = { version = "6", features = ["axum"] }
+
+[dev-dependencies]
+tokio-test = "0.4"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

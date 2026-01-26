@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Ergo Index Explorer</title>
+    <link rel="stylesheet" href="/styles.css">
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛓️</text></svg>">
+</head>
+<body>
+    <nav class="navbar">
+        <div class="nav-brand">
+            <span class="logo">⛓️</span>
+            <span class="brand-text">Ergo Index</span>
+        </div>
+        <div class="nav-links">
+            <a href="#" class="nav-link active" data-page="explorer">Explorer</a>
+            <a href="#" class="nav-link" data-page="wallet">Wallet</a>
+            <a href="#" class="nav-link" data-page="status">Status</a>
+            <a href="/docs" class="nav-link" target="_blank">API Docs</a>
+        </div>
+        <div class="nav-search">
+            <input type="text" id="searchInput" placeholder="Search by block, tx, address, token...">
+            <button id="searchBtn">🔍</button>
+        </div>
+    </nav>
+
+    <main class="container">
+        <!-- Explorer Page -->
+        <div id="explorer-page" class="page active">
+            <div class="stats-grid">
+                <div class="stat-card">
+                    <div class="stat-label">Blocks</div>
+                    <div class="stat-value" id="stat-blocks">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Transactions</div>
+                    <div class="stat-value" id="stat-txs">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Addresses</div>
+                    <div class="stat-value" id="stat-addresses">-</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-label">Tokens</div>
+                    <div class="stat-value" id="stat-tokens">-</div>
+                </div>
+            </div>
+
+            <div class="content-grid">
+                <div class="panel">
+                    <h2>Latest Blocks</h2>
+                    <div id="latest-blocks" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+                <div class="panel">
+                    <h2>Latest Transactions</h2>
+                    <div id="latest-txs" class="list-container">
+                        <div class="loading">Loading...</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Wallet Page -->
+        <div id="wallet-page" class="page">
+            <div class="wallet-header">
+                <h2>Node Wallet</h2>
+                <div class="wallet-status" id="wallet-status">
+                    <span class="status-dot"></span>
+                    <span class="status-text">Checking...</span>
+                </div>
+            </div>
+
+            <div id="wallet-locked" class="wallet-section">
+                <div class="unlock-form">
+                    <h3>Unlock Wallet</h3>
+                    <input type="password" id="wallet-password" placeholder="Enter wallet password">
+                    <button id="unlock-btn" class="btn btn-primary">Unlock</button>
+                </div>
+            </div>
+
+            <div id="wallet-unlocked" class="wallet-section hidden">
+                <div class="wallet-balance">
+                    <h3>Balance</h3>
+                    <div class="balance-amount" id="wallet-balance">0 ERG</div>
+                </div>
+
+                <div class="wallet-addresses">
+                    <h3>Addresses</h3>
+                    <div id="wallet-address-list" class="address-list"></div>
+                </div>
+
+                <div class="wallet-send">
+                    <h3>Send Transaction</h3>
+                    <div class="send-form">
+                        <input type="text" id="send-to" placeholder="Recipient address">
+                        <input type="number" id="send-amount" placeholder="Amount (ERG)">
+                        <button id="send-btn" class="btn btn-primary">Send</button>
+                    </div>
+                </div>
+
+                <button id="lock-btn" class="btn btn-secondary">Lock Wallet</button>
+            </div>
+        </div>
+
+        <!-- Status Page -->
+        <div id="status-page" class="page">
+            <h2>System Status</h2>
+
+            <div class="status-grid">
+                <div class="status-panel">
+                    <h3>Sync Status</h3>
+                    <div class="sync-progress">
+                        <div class="progress-bar">
+                            <div class="progress-fill" id="sync-progress"></div>
+                        </div>
+                        <div class="progress-text" id="sync-text">Loading...</div>
+                    </div>
+                    <div class="sync-details">
+                        <div class="sync-item">
+                            <span class="label">Local Height:</span>
+                            <span class="value" id="local-height">-</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="label">Node Height:</span>
+                            <span class="value" id="node-height">-</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="label">Blocks/sec:</span>
+                            <span class="value" id="blocks-per-sec">-</span>
+                        </div>
+                        <div class="sync-item">
+                            <span class="label">ETA:</span>
+                            <span class="value" id="sync-eta">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-panel">
+                    <h3>Connected Nodes</h3>
+                    <div id="node-list" class="node-list"></div>
+                </div>
+
+                <div class="status-panel">
+                    <h3>Database</h3>
+                    <div class="db-stats">
+                        <div class="db-item">
+                            <span class="label">Blocks:</span>
+                            <span class="value" id="db-blocks">-</span>
+                        </div>
+                        <div class="db-item">
+                            <span class="label">Transactions:</span>
+                            <span class="value" id="db-txs">-</span>
+                        </div>
+                        <div class="db-item">
+                            <span class="label">Boxes:</span>
+                            <span class="value" id="db-boxes">-</span>
+                        </div>
+                        <div class="db-item">
+                            <span class="label">Tokens:</span>
+                            <span class="value" id="db-tokens">-</span>
+                        </div>
+                        <div class="db-item">
+                            <span class="label">Size:</span>
+                            <span class="value" id="db-size">-</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="status-panel">
+                    <h3>System</h3>
+                    <div class="sys-stats">
+                        <div class="sys-item">
+                            <span class="label">Version:</span>
+                            <span class="value" id="sys-version">-</span>
+                        </div>
+                        <div class="sys-item">
+                            <span class="label">Network:</span>
+                            <span class="value" id="sys-network">-</span>
+                        </div>
+                        <div class="sys-item">
+                            <span class="label">Uptime:</span>
+                            <span class="value" id="sys-uptime">-</span>
+                        </div>
+                        <div class="sys-item">
+                            <span class="label">Memory:</span>
+                            <span class="value" id="sys-memory">-</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Search Results Modal -->
+        <div id="search-modal" class="modal hidden">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h3>Search Results</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div id="search-results" class="modal-body"></div>
+            </div>
+        </div>
+
+        <!-- Detail Modal -->
+        <div id="detail-modal" class="modal hidden">
+            <div class="modal-content modal-large">
+                <div class="modal-header">
+                    <h3 id="detail-title">Details</h3>
+                    <button class="modal-close">&times;</button>
+                </div>
+                <div id="detail-content" class="modal-body"></div>
+            </div>
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>Ergo Index v<span id="version">0.1.0</span> | <a href="/docs">API Documentation</a> | <a href="https://github.com/andrehafner/indexed_node_explorer_replacement" target="_blank">GitHub</a></p>
+    </footer>
+
+    <script src="/app.js"></script>
+</body>
+</html>
