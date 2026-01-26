@@ -1,0 +1,52 @@
+# Docker Compose override for running with an EMBEDDED Ergo node
+#
+# Usage:
+#   docker-compose -f docker-compose.yml -f docker-compose.embedded.yml up -d
+#
+# This starts:
+#   1. Ergo node (ergoplatform/ergo:v6.1.2)
+#   2. ergo-index connected to the embedded node
+#
+# The node will need time to sync before the indexer can make progress.
+# Monitor progress at http://localhost:8080/status
+
+version: "3.8"
+
+services:
+  # Ergo Node
+  ergo-node:
+    image: ergoplatform/ergo:v6.1.2
+    container_name: ergo-node
+    restart: unless-stopped
+    ports:
+      - "${NODE_PORT:-9053}:9053"
+      - "${NODE_P2P_PORT:-9030}:9030"
+    volumes:
+      - ergo-node-data:/home/ergo/.ergo
+      - ./node-config:/home/ergo/config:ro
+    environment:
+      - _JAVA_OPTIONS=-Xmx4g
+    command: >
+      --mainnet
+      -c /home/ergo/config/application.conf
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9053/info"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+
+  # Override ergo-index to connect to embedded node
+  ergo-index:
+    depends_on:
+      ergo-node:
+        condition: service_healthy
+    environment:
+      # Connect to the embedded node
+      - ERGO_NODES=http://ergo-node:9053
+      - NODE_API_KEY=${NODE_API_KEY:-hello}
+    extra_hosts: []  # Clear host.docker.internal since we're using embedded node
+
+volumes:
+  ergo-node-data:
+    driver: local

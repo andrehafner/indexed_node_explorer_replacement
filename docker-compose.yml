@@ -1,0 +1,52 @@
+# Docker Compose for ergo-index
+# This is the DEFAULT configuration that connects to an EXTERNAL node
+#
+# Usage:
+#   1. External node mode (default):
+#      docker-compose up -d
+#
+#   2. With embedded node:
+#      docker-compose -f docker-compose.yml -f docker-compose.embedded.yml up -d
+#
+# Configuration via environment variables or .env file
+
+version: "3.8"
+
+services:
+  ergo-index:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: ergo-index
+    restart: unless-stopped
+    ports:
+      - "${INDEX_PORT:-8080}:8080"
+    volumes:
+      - ergo-index-data:/app/data
+    environment:
+      # Node connection - configure for your setup
+      - ERGO_NODES=${ERGO_NODES:-http://host.docker.internal:9053}
+      - NODE_API_KEY=${NODE_API_KEY:-}
+      # Database
+      - DATABASE_PATH=/app/data/ergo-index.duckdb
+      # Server
+      - PORT=8080
+      - HOST=0.0.0.0
+      # Sync settings
+      - SYNC_BATCH_SIZE=${SYNC_BATCH_SIZE:-100}
+      - SYNC_INTERVAL=${SYNC_INTERVAL:-10}
+      # Network
+      - NETWORK=${NETWORK:-mainnet}
+    extra_hosts:
+      # Allows connecting to host machine (for external node on localhost)
+      - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+volumes:
+  ergo-index-data:
+    driver: local

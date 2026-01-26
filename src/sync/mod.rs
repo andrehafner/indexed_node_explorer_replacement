@@ -1,0 +1,314 @@
+mod node_client;
+mod processor;
+
+use anyhow::Result;
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
+use std::sync::Arc;
+use tokio::sync::RwLock;
+
+use crate::db::Database;
+pub use node_client::NodeClient;
+use processor::BlockProcessor;
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct SyncStatus {
+    pub is_syncing: bool,
+    pub local_height: i64,
+    pub node_height: i64,
+    pub sync_progress: f64,
+    pub blocks_per_second: f64,
+    pub eta_seconds: Option<i64>,
+    pub last_block_time: Option<i64>,
+    pub connected_nodes: Vec<NodeStatus>,
+    pub error: Option<String>,
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct NodeStatus {
+    pub url: String,
+    pub connected: bool,
+    pub height: Option<i64>,
+    pub latency_ms: Option<u64>,
+    pub last_used: Option<i64>,
+}
+
+pub struct SyncService {
+    nodes: Vec<NodeClient>,
+    db: Database,
+    batch_size: u32,
+    processor: BlockProcessor,
+
+    // Sync state
+    is_syncing: AtomicBool,
+    local_height: AtomicI64,
+    node_height: AtomicI64,
+    blocks_synced: AtomicU64,
+    sync_start_time: AtomicU64,
+    last_error: RwLock<Option<String>>,
+    node_statuses: RwLock<Vec<NodeStatus>>,
+}
+
+impl SyncService {
+    pub fn new(
+        node_urls: Vec<String>,
+        db: Database,
+        batch_size: u32,
+        api_key: Option<String>,
+    ) -> Self {
+        let nodes: Vec<NodeClient> = node_urls
+            .iter()
+            .map(|url| NodeClient::new(url.clone(), api_key.clone()))
+            .collect();
+
+        let node_statuses: Vec<NodeStatus> = node_urls
+            .iter()
+            .map(|url| NodeStatus {
+                url: url.clone(),
+                connected: false,
+                height: None,
+                latency_ms: None,
+                last_used: None,
+            })
+            .collect();
+
+        Self {
+            processor: BlockProcessor::new(db.clone()),
+            nodes,
+            db,
+            batch_size,
+            is_syncing: AtomicBool::new(false),
+            local_height: AtomicI64::new(-1),
+            node_height: AtomicI64::new(0),
+            blocks_synced: AtomicU64::new(0),
+            sync_start_time: AtomicU64::new(0),
+            last_error: RwLock::new(None),
+            node_statuses: RwLock::new(node_statuses),
+        }
+    }
+
+    pub async fn run(&self, interval_secs: u64) {
+        tracing::info!("Starting sync service with {} node(s)", self.nodes.len());
+
+        loop {
+            if let Err(e) = self.sync_once().await {
+                tracing::error!("Sync error: {}", e);
+                *self.last_error.write().await = Some(e.to_string());
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_secs(interval_secs)).await;
+        }
+    }
+
+    async fn sync_once(&self) -> Result<()> {
+        // Check node health and get best height
+        let (best_node_idx, node_height) = self.find_best_node().await?;
+
+        self.node_height.store(node_height, Ordering::SeqCst);
+
+        // Get local height
+        let local_height = self.db.get_sync_height()?;
+        self.local_height.store(local_height, Ordering::SeqCst);
+
+        if local_height >= node_height {
+            tracing::debug!("Already synced to height {}", local_height);
+            return Ok(());
+        }
+
+        // Start syncing
+        self.is_syncing.store(true, Ordering::SeqCst);
+        self.sync_start_time.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            Ordering::SeqCst,
+        );
+        self.blocks_synced.store(0, Ordering::SeqCst);
+        *self.last_error.write().await = None;
+
+        let start_height = local_height + 1;
+        let end_height = node_height;
+        let total_blocks = (end_height - start_height + 1) as u64;
+
+        tracing::info!(
+            "Syncing blocks {} to {} ({} blocks)",
+            start_height,
+            end_height,
+            total_blocks
+        );
+
+        // Sync in batches with parallel fetching across nodes
+        let mut current_height = start_height;
+
+        while current_height <= end_height {
+            let batch_end = std::cmp::min(current_height + self.batch_size as i64 - 1, end_height);
+            let batch_size = (batch_end - current_height + 1) as usize;
+
+            // Parallel fetch using multiple nodes
+            let blocks = self
+                .fetch_blocks_parallel(current_height, batch_end)
+                .await?;
+
+            // Process blocks sequentially (must maintain order)
+            for block in blocks {
+                self.processor.process_block(&block).await?;
+            }
+
+            self.blocks_synced
+                .fetch_add(batch_size as u64, Ordering::SeqCst);
+            self.local_height.store(batch_end, Ordering::SeqCst);
+
+            let progress = self.blocks_synced.load(Ordering::SeqCst) as f64 / total_blocks as f64;
+            tracing::info!(
+                "Synced to height {} ({:.1}%)",
+                batch_end,
+                progress * 100.0
+            );
+
+            current_height = batch_end + 1;
+        }
+
+        self.is_syncing.store(false, Ordering::SeqCst);
+        tracing::info!("Sync complete at height {}", end_height);
+
+        Ok(())
+    }
+
+    async fn find_best_node(&self) -> Result<(usize, i64)> {
+        let mut best_idx = 0;
+        let mut best_height: i64 = 0;
+        let mut statuses = self.node_statuses.write().await;
+
+        for (idx, node) in self.nodes.iter().enumerate() {
+            let start = std::time::Instant::now();
+            match node.get_info().await {
+                Ok(info) => {
+                    let latency = start.elapsed().as_millis() as u64;
+                    let height = info.full_height.unwrap_or(0);
+
+                    statuses[idx].connected = true;
+                    statuses[idx].height = Some(height);
+                    statuses[idx].latency_ms = Some(latency);
+                    statuses[idx].last_used = Some(chrono::Utc::now().timestamp());
+
+                    if height > best_height {
+                        best_height = height;
+                        best_idx = idx;
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("Node {} unreachable: {}", node.url, e);
+                    statuses[idx].connected = false;
+                    statuses[idx].height = None;
+                    statuses[idx].latency_ms = None;
+                }
+            }
+        }
+
+        if best_height == 0 {
+            anyhow::bail!("No nodes available");
+        }
+
+        Ok((best_idx, best_height))
+    }
+
+    async fn fetch_blocks_parallel(
+        &self,
+        start_height: i64,
+        end_height: i64,
+    ) -> Result<Vec<serde_json::Value>> {
+        let heights: Vec<i64> = (start_height..=end_height).collect();
+        let num_nodes = self.nodes.len();
+
+        // Distribute heights across nodes
+        let mut futures = Vec::new();
+
+        for (i, height) in heights.iter().enumerate() {
+            let node_idx = i % num_nodes;
+            let node = &self.nodes[node_idx];
+            let height = *height;
+
+            futures.push(async move {
+                // Get block header IDs at this height
+                let header_ids = node.get_block_ids_at_height(height).await?;
+                if header_ids.is_empty() {
+                    anyhow::bail!("No block at height {}", height);
+                }
+
+                // Get full block
+                let block = node.get_block(&header_ids[0]).await?;
+                Ok::<(i64, serde_json::Value), anyhow::Error>((height, block))
+            });
+        }
+
+        // Execute all fetches in parallel
+        let results = futures::future::join_all(futures).await;
+
+        // Collect and sort by height
+        let mut blocks: Vec<(i64, serde_json::Value)> = Vec::new();
+        for result in results {
+            match result {
+                Ok((height, block)) => blocks.push((height, block)),
+                Err(e) => {
+                    tracing::error!("Failed to fetch block: {}", e);
+                    return Err(e);
+                }
+            }
+        }
+
+        blocks.sort_by_key(|(h, _)| *h);
+        Ok(blocks.into_iter().map(|(_, b)| b).collect())
+    }
+
+    pub async fn get_status(&self) -> SyncStatus {
+        let is_syncing = self.is_syncing.load(Ordering::SeqCst);
+        let local_height = self.local_height.load(Ordering::SeqCst);
+        let node_height = self.node_height.load(Ordering::SeqCst);
+        let blocks_synced = self.blocks_synced.load(Ordering::SeqCst);
+        let sync_start = self.sync_start_time.load(Ordering::SeqCst);
+
+        let sync_progress = if node_height > 0 {
+            (local_height as f64 / node_height as f64).min(1.0)
+        } else {
+            0.0
+        };
+
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+
+        let (blocks_per_second, eta_seconds) = if is_syncing && sync_start > 0 {
+            let elapsed = (now - sync_start).max(1);
+            let bps = blocks_synced as f64 / elapsed as f64;
+            let remaining = node_height - local_height;
+            let eta = if bps > 0.0 {
+                Some((remaining as f64 / bps) as i64)
+            } else {
+                None
+            };
+            (bps, eta)
+        } else {
+            (0.0, None)
+        };
+
+        let error = self.last_error.read().await.clone();
+        let connected_nodes = self.node_statuses.read().await.clone();
+
+        SyncStatus {
+            is_syncing,
+            local_height,
+            node_height,
+            sync_progress,
+            blocks_per_second,
+            eta_seconds,
+            last_block_time: None, // TODO: track this
+            connected_nodes,
+            error,
+        }
+    }
+
+    pub fn get_primary_node(&self) -> Option<&NodeClient> {
+        self.nodes.first()
+    }
+}
