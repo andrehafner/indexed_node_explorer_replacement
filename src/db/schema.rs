@@ -59,7 +59,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             creation_height INTEGER NOT NULL,
             settlement_height INTEGER NOT NULL,
             global_index BIGINT NOT NULL,
-            additional_registers JSON,
+            additional_registers TEXT,
             spent_tx_id VARCHAR(64),
             spent_index INTEGER,
             spent_height INTEGER,
@@ -172,7 +172,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         -- Mempool transactions
         CREATE TABLE IF NOT EXISTS mempool_transactions (
             tx_id VARCHAR(64) PRIMARY KEY,
-            tx_data JSON NOT NULL,
+            tx_data TEXT NOT NULL,
             first_seen BIGINT NOT NULL,
             size INTEGER NOT NULL
         );
