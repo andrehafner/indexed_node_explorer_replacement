@@ -9,16 +9,15 @@ repository = "https://github.com/andrehafner/indexed_node_explorer_replacement"
 [dependencies]
 # Web framework
 axum = { version = "0.7", features = ["macros", "ws"] }
-tower = { version = "0.4", features = ["full"] }
-tower-http = { version = "0.5", features = ["fs", "cors", "trace", "compression-gzip"] }
+tower = { version = "0.5", features = ["full"] }
+tower-http = { version = "0.6", features = ["fs", "cors", "trace", "compression-gzip"] }
 
 # Async runtime
 tokio = { version = "1", features = ["full"] }
 
 # Database
-duckdb = { version = "0.10", features = ["bundled"] }
+duckdb = { version = "1.0", features = ["bundled"] }
 r2d2 = "0.8"
-r2d2-duckdb = "0.1"
 
 # Serialization
 serde = { version = "1", features = ["derive"] }

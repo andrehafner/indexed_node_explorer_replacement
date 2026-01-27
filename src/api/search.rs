@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -151,7 +152,7 @@ async fn find_block_by_height(
         .query_one(
             "SELECT block_id, height, timestamp, tx_count, miner_address, difficulty, block_size
              FROM blocks WHERE height = ? AND main_chain = TRUE",
-            &[&height],
+            [height],
             |row| {
                 Ok(BlockSummary {
                     id: row.get(0)?,
@@ -176,7 +177,7 @@ async fn find_block_by_id(
         .query_one(
             "SELECT block_id, height, timestamp, tx_count, miner_address, difficulty, block_size
              FROM blocks WHERE block_id = ?",
-            &[&id],
+            [id],
             |row| {
                 Ok(BlockSummary {
                     id: row.get(0)?,
@@ -201,7 +202,7 @@ async fn find_transaction_by_id(
         .query_one(
             "SELECT tx_id, timestamp, inclusion_height, input_count, output_count, size
              FROM transactions WHERE tx_id = ?",
-            &[&id],
+            [id],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,
@@ -225,7 +226,7 @@ async fn find_token_by_id(
         .query_one(
             "SELECT token_id, name, decimals, emission_amount
              FROM tokens WHERE token_id = ?",
-            &[&id],
+            [id],
             |row| {
                 Ok(TokenSummary {
                     id: row.get(0)?,
@@ -251,7 +252,7 @@ async fn find_box_by_id(
         .db
         .query_one(
             "SELECT tx_id FROM boxes WHERE box_id = ?",
-            &[&id],
+            [id],
             |row| Ok(BoxInfo { tx_id: row.get(0)? }),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))
@@ -266,7 +267,7 @@ async fn find_address(
         .query_one(
             "SELECT tx_count, first_seen_height, last_seen_height
              FROM address_stats WHERE address = ?",
-            &[&address],
+            [address],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -284,7 +285,7 @@ async fn find_address(
             .query_one(
                 "SELECT COALESCE(SUM(value), 0) FROM boxes
                  WHERE address = ? AND spent_tx_id IS NULL",
-                &[&address],
+                [address],
                 |row| row.get(0),
             )
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -307,7 +308,7 @@ async fn find_address(
         .db
         .query_one(
             "SELECT 1 FROM boxes WHERE address = ? LIMIT 1",
-            &[&address],
+            [address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -318,7 +319,7 @@ async fn find_address(
             .query_one(
                 "SELECT COALESCE(SUM(value), 0) FROM boxes
                  WHERE address = ? AND spent_tx_id IS NULL",
-                &[&address],
+                [address],
                 |row| row.get(0),
             )
             .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -354,7 +355,7 @@ async fn search_tokens_by_name(
              WHERE name LIKE ?
              ORDER BY emission_amount DESC
              LIMIT ?",
-            &[&pattern, &limit],
+            params![pattern, limit],
             |row| {
                 Ok(TokenSummary {
                     id: row.get(0)?,

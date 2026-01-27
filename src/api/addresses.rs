@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use std::sync::Arc;
 
 use crate::models::{AddressInfo, Balance, PaginatedResponse, Pagination, TokenBalance, TransactionSummary};
@@ -19,7 +20,7 @@ pub async fn get_address(
         .query_one(
             "SELECT tx_count, balance, first_seen_height, last_seen_height
              FROM address_stats WHERE address = ?",
-            &[&address],
+            [&address],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -37,7 +38,7 @@ pub async fn get_address(
         .query_one(
             "SELECT COALESCE(SUM(value), 0) FROM boxes
              WHERE address = ? AND spent_tx_id IS NULL",
-            &[&address],
+            [&address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -54,7 +55,7 @@ pub async fn get_address(
              WHERE b.address = ? AND b.spent_tx_id IS NULL
              GROUP BY ba.token_id, t.name, t.decimals
              ORDER BY total DESC",
-            &[&address],
+            [&address],
             |row| {
                 Ok(TokenBalance {
                     token_id: row.get(0)?,
@@ -90,7 +91,7 @@ pub async fn get_balance_total(
         .query_one(
             "SELECT COALESCE(SUM(value), 0) FROM boxes
              WHERE address = ? AND spent_tx_id IS NULL",
-            &[&address],
+            [&address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -106,7 +107,7 @@ pub async fn get_balance_total(
              WHERE b.address = ? AND b.spent_tx_id IS NULL
              GROUP BY ba.token_id, t.name, t.decimals
              ORDER BY total DESC",
-            &[&address],
+            [&address],
             |row| {
                 Ok(TokenBalance {
                     token_id: row.get(0)?,
@@ -148,7 +149,7 @@ pub async fn get_address_transactions(
                  JOIN boxes b ON i.box_id = b.box_id
                  WHERE b.address = ?
              )",
-            &[&address, &address],
+            params![address, address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -168,7 +169,7 @@ pub async fn get_address_transactions(
              )
              ORDER BY t.inclusion_height DESC
              LIMIT ? OFFSET ?",
-            &[&address, &address, &params.limit, &params.offset],
+            params![address, address, params.limit, params.offset],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,

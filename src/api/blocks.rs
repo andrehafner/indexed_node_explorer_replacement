@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -26,16 +27,16 @@ fn default_limit() -> i64 { 20 }
 /// GET /api/v1/blocks - Get list of blocks
 pub async fn get_blocks(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<BlocksQuery>,
+    Query(params_query): Query<BlocksQuery>,
 ) -> Result<Json<PaginatedResponse<BlockSummary>>, (StatusCode, String)> {
-    let sort_dir = params.sort_direction.as_deref().unwrap_or("desc");
+    let sort_dir = params_query.sort_direction.as_deref().unwrap_or("desc");
     let order = if sort_dir == "asc" { "ASC" } else { "DESC" };
 
     let total: i64 = state
         .db
         .query_one(
             "SELECT COUNT(*) FROM blocks WHERE main_chain = TRUE",
-            &[],
+            [],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -52,7 +53,7 @@ pub async fn get_blocks(
 
     let items = state
         .db
-        .query_all(&sql, &[&params.limit, &params.offset], |row| {
+        .query_all(&sql, params![params_query.limit, params_query.offset], |row| {
             Ok(BlockSummary {
                 id: row.get(0)?,
                 height: row.get(1)?,
@@ -88,7 +89,7 @@ pub async fn get_block(
 
     let block = state
         .db
-        .query_one(sql, &[&id], |row| {
+        .query_one(sql, [&id], |row| {
             Ok(Block {
                 id: row.get(0)?,
                 parent_id: row.get(1)?,
@@ -114,7 +115,7 @@ pub async fn get_block(
 /// GET /api/v1/blocks/headers - Get recent block headers
 pub async fn get_headers(
     State(state): State<Arc<AppState>>,
-    Query(params): Query<Pagination>,
+    Query(pag): Query<Pagination>,
 ) -> Result<Json<Vec<BlockSummary>>, (StatusCode, String)> {
     let items = state
         .db
@@ -124,7 +125,7 @@ pub async fn get_headers(
              WHERE main_chain = TRUE
              ORDER BY height DESC
              LIMIT ? OFFSET ?",
-            &[&params.limit, &params.offset],
+            params![pag.limit, pag.offset],
             |row| {
                 Ok(BlockSummary {
                     id: row.get(0)?,
@@ -154,7 +155,7 @@ pub async fn get_block_at_height(
                     block_coins, block_mining_time, tx_count, miner_address, miner_reward,
                     miner_name, main_chain
              FROM blocks WHERE height = ? AND main_chain = TRUE",
-            &[&height],
+            [height],
             |row| {
                 Ok(Block {
                     id: row.get(0)?,
@@ -183,13 +184,13 @@ pub async fn get_block_at_height(
 pub async fn get_blocks_by_miner(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
-    Query(params): Query<Pagination>,
+    Query(pag): Query<Pagination>,
 ) -> Result<Json<PaginatedResponse<BlockSummary>>, (StatusCode, String)> {
     let total: i64 = state
         .db
         .query_one(
             "SELECT COUNT(*) FROM blocks WHERE miner_address = ? AND main_chain = TRUE",
-            &[&address],
+            [&address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -203,7 +204,7 @@ pub async fn get_blocks_by_miner(
              WHERE miner_address = ? AND main_chain = TRUE
              ORDER BY height DESC
              LIMIT ? OFFSET ?",
-            &[&address, &params.limit, &params.offset],
+            params![address, pag.limit, pag.offset],
             |row| {
                 Ok(BlockSummary {
                     id: row.get(0)?,

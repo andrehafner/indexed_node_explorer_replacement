@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use std::sync::Arc;
 
 use crate::models::{ApiInfo, Epoch, NetworkStats, PaginatedResponse, Pagination};
@@ -41,7 +42,7 @@ pub async fn get_stats(
              FROM network_stats
              ORDER BY timestamp DESC
              LIMIT 1",
-            &[],
+            [],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -89,7 +90,7 @@ pub async fn get_network_stats(
              FROM network_stats
              ORDER BY timestamp DESC
              LIMIT 1",
-            &[],
+            [],
             |row| {
                 Ok((
                     row.get::<_, i64>(0)?,
@@ -144,7 +145,7 @@ pub async fn get_epochs(
                 "SELECT MIN(timestamp), MAX(timestamp), COUNT(*)
                  FROM blocks
                  WHERE height >= ? AND height <= ? AND main_chain = TRUE",
-                &[&height_start, &height_end],
+                params![height_start, height_end],
                 |row| {
                     Ok((
                         row.get::<_, Option<i64>>(0)?,
@@ -197,7 +198,7 @@ pub async fn get_epoch(
             "SELECT MIN(timestamp), MAX(timestamp), COUNT(*)
              FROM blocks
              WHERE height >= ? AND height <= ? AND main_chain = TRUE",
-            &[&height_start, &height_end],
+            params![height_start, height_end],
             |row| {
                 Ok((
                     row.get::<_, Option<i64>>(0)?,

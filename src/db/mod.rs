@@ -1,10 +1,25 @@
 mod schema;
 
 use anyhow::{Context, Result};
-use duckdb::{params, Connection, OptionalExtension};
+use duckdb::{Connection, params};
 use std::sync::{Arc, Mutex};
 
 pub use schema::MIGRATIONS;
+
+/// Extension trait for optional query results
+trait OptionalExt<T> {
+    fn optional(self) -> Result<Option<T>, duckdb::Error>;
+}
+
+impl<T> OptionalExt<T> for Result<T, duckdb::Error> {
+    fn optional(self) -> Result<Option<T>, duckdb::Error> {
+        match self {
+            Ok(v) => Ok(Some(v)),
+            Err(duckdb::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e),
+        }
+    }
+}
 
 #[derive(Clone)]
 pub struct Database {
@@ -17,8 +32,8 @@ impl Database {
 
         // Enable optimizations
         conn.execute_batch(
-            "PRAGMA threads=4;
-             PRAGMA memory_limit='512MB';",
+            "SET threads=4;
+             SET memory_limit='512MB';",
         )?;
 
         Ok(Self {
@@ -44,7 +59,7 @@ impl Database {
             let applied: Option<i32> = conn
                 .query_row(
                     "SELECT id FROM _migrations WHERE id = ?",
-                    [id as i32],
+                    params![id as i32],
                     |row| row.get(0),
                 )
                 .optional()?;
@@ -62,7 +77,7 @@ impl Database {
         Ok(())
     }
 
-    pub fn execute(&self, sql: &str, params: &[&dyn duckdb::ToSql]) -> Result<usize> {
+    pub fn execute<P: duckdb::Params>(&self, sql: &str, params: P) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         Ok(conn.execute(sql, params)?)
     }
@@ -72,8 +87,9 @@ impl Database {
         Ok(conn.execute_batch(sql)?)
     }
 
-    pub fn query_one<T, F>(&self, sql: &str, params: &[&dyn duckdb::ToSql], f: F) -> Result<Option<T>>
+    pub fn query_one<T, P, F>(&self, sql: &str, params: P, f: F) -> Result<Option<T>>
     where
+        P: duckdb::Params,
         F: FnOnce(&duckdb::Row<'_>) -> Result<T, duckdb::Error>,
     {
         let conn = self.conn.lock().unwrap();
@@ -81,16 +97,17 @@ impl Database {
         Ok(result)
     }
 
-    pub fn query_all<T, F>(&self, sql: &str, params: &[&dyn duckdb::ToSql], f: F) -> Result<Vec<T>>
+    pub fn query_all<T, P, F>(&self, sql: &str, params: P, mut f: F) -> Result<Vec<T>>
     where
+        P: duckdb::Params,
         F: FnMut(&duckdb::Row<'_>) -> Result<T, duckdb::Error>,
     {
         let conn = self.conn.lock().unwrap();
         let mut stmt = conn.prepare(sql)?;
-        let rows = stmt.query_map(params, f)?;
+        let mut rows = stmt.query(params)?;
         let mut results = Vec::new();
-        for row in rows {
-            results.push(row?);
+        while let Some(row) = rows.next()? {
+            results.push(f(row)?);
         }
         Ok(results)
     }
@@ -99,7 +116,7 @@ impl Database {
     pub fn get_sync_height(&self) -> Result<i64> {
         let result: Option<i64> = self.query_one(
             "SELECT MAX(height) FROM blocks",
-            &[],
+            [],
             |row| row.get(0),
         )?;
         Ok(result.unwrap_or(-1))
