@@ -145,6 +145,14 @@ impl BlockProcessor {
         let output_count = outputs.len() as i32;
         let coinbase = input_count == 0 || tx_idx == 0;
 
+        // Get first input's box_id - this is used to identify minting transactions
+        // Token ID == first input box_id means this tx mints that token
+        let first_input_box_id = inputs
+            .and_then(|i| i.first())
+            .and_then(|inp| inp.get("boxId"))
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+
         self.global_tx_index += 1;
 
         // Insert transaction
@@ -184,7 +192,7 @@ impl BlockProcessor {
 
         // Process outputs (create boxes)
         for (output_idx, output) in outputs.iter().enumerate() {
-            self.process_output(output, tx_id, height, output_idx as i32)?;
+            self.process_output(output, tx_id, height, output_idx as i32, first_input_box_id.as_deref())?;
         }
 
         Ok(())
@@ -230,7 +238,14 @@ impl BlockProcessor {
         Ok(())
     }
 
-    fn process_output(&mut self, output: &Value, tx_id: &str, height: i64, output_idx: i32) -> Result<()> {
+    fn process_output(
+        &mut self,
+        output: &Value,
+        tx_id: &str,
+        height: i64,
+        output_idx: i32,
+        first_input_box_id: Option<&str>,
+    ) -> Result<()> {
         let box_id = output.get("boxId").and_then(|v| v.as_str()).context("Missing boxId")?;
         let value = output.get("value").and_then(|v| v.as_i64()).unwrap_or(0);
         let ergo_tree_hex = output.get("ergoTree").and_then(|v| v.as_str()).unwrap_or("");
@@ -272,7 +287,14 @@ impl BlockProcessor {
         // Process assets (tokens)
         if let Some(assets) = assets {
             for (asset_idx, asset) in assets.iter().enumerate() {
-                self.process_asset(asset, box_id, height, asset_idx as i32)?;
+                self.process_asset(
+                    asset,
+                    box_id,
+                    height,
+                    asset_idx as i32,
+                    first_input_box_id,
+                    additional_registers,
+                )?;
             }
         }
 
@@ -282,7 +304,15 @@ impl BlockProcessor {
         Ok(())
     }
 
-    fn process_asset(&mut self, asset: &Value, box_id: &str, height: i64, asset_idx: i32) -> Result<()> {
+    fn process_asset(
+        &mut self,
+        asset: &Value,
+        box_id: &str,
+        height: i64,
+        asset_idx: i32,
+        first_input_box_id: Option<&str>,
+        registers: Option<&Value>,
+    ) -> Result<()> {
         let token_id = asset.get("tokenId").and_then(|v| v.as_str()).context("Missing tokenId")?;
         let amount = asset.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
 
@@ -296,16 +326,25 @@ impl BlockProcessor {
             params![self.box_asset_id, box_id, token_id, amount, asset_idx],
         )?;
 
-        // Check if this is a new token (first emission)
-        // Token ID equals the box ID of the first input of the minting transaction
+        // Check if this is a minting transaction (token_id == first input's box_id)
+        // Only the first asset in the output can be a newly minted token
         if asset_idx == 0 {
-            self.try_register_token(token_id, box_id, amount, height)?;
+            let is_minting = first_input_box_id.map(|id| id == token_id).unwrap_or(false);
+            self.try_register_token(token_id, box_id, amount, height, is_minting, registers)?;
         }
 
         Ok(())
     }
 
-    fn try_register_token(&self, token_id: &str, box_id: &str, amount: i64, height: i64) -> Result<()> {
+    fn try_register_token(
+        &self,
+        token_id: &str,
+        box_id: &str,
+        amount: i64,
+        height: i64,
+        is_minting: bool,
+        registers: Option<&Value>,
+    ) -> Result<()> {
         // Check if token already exists
         let exists: Option<i32> = self.db.query_one(
             "SELECT 1 FROM tokens WHERE token_id = ?",
@@ -314,13 +353,18 @@ impl BlockProcessor {
         )?;
 
         if exists.is_none() {
-            // This might be the minting box - try to extract name/description from registers
-            // For now, insert basic info
+            // Extract metadata from registers if this is a minting transaction
+            let (name, description, decimals) = if is_minting {
+                extract_token_metadata(registers)
+            } else {
+                (None, None, None)
+            };
+
             self.db.execute(
-                "INSERT INTO tokens (token_id, box_id, emission_amount, creation_height)
-                 VALUES (?, ?, ?, ?)
+                "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
+                 VALUES (?, ?, ?, ?, ?, ?, ?)
                  ON CONFLICT (token_id) DO NOTHING",
-                params![token_id, box_id, amount, height],
+                params![token_id, box_id, amount, name, description, decimals, height],
             )?;
         }
 
@@ -377,4 +421,115 @@ impl BlockProcessor {
 
         Ok(())
     }
+}
+
+/// Extract token metadata from box registers
+/// In Ergo, token metadata is encoded in:
+/// - R4: Token name (Coll[Byte])
+/// - R5: Token description (Coll[Byte])
+/// - R6: Token decimals (Coll[Byte] containing ASCII digits, or Int)
+fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<String>, Option<i32>) {
+    let registers = match registers {
+        Some(r) => r,
+        None => return (None, None, None),
+    };
+
+    let name = registers
+        .get("R4")
+        .and_then(|v| v.as_str())
+        .and_then(decode_sigma_string);
+
+    let description = registers
+        .get("R5")
+        .and_then(|v| v.as_str())
+        .and_then(decode_sigma_string);
+
+    let decimals = registers
+        .get("R6")
+        .and_then(|v| v.as_str())
+        .and_then(decode_sigma_int);
+
+    (name, description, decimals)
+}
+
+/// Decode a Sigma-encoded Coll[Byte] (type 0e) to a UTF-8 string
+/// Format: 0e + VLQ length + bytes
+fn decode_sigma_string(hex: &str) -> Option<String> {
+    let bytes = hex::decode(hex).ok()?;
+
+    if bytes.is_empty() {
+        return None;
+    }
+
+    // Check for Coll[Byte] type (0x0e)
+    if bytes[0] == 0x0e {
+        // VLQ decode the length
+        let (len, offset) = decode_vlq(&bytes[1..])?;
+        if offset + 1 + len > bytes.len() {
+            return None;
+        }
+        let string_bytes = &bytes[1 + offset..1 + offset + len];
+        return String::from_utf8(string_bytes.to_vec()).ok();
+    }
+
+    // Some tokens use raw UTF-8 without type prefix (non-standard but common)
+    String::from_utf8(bytes).ok()
+}
+
+/// Decode a Sigma-encoded integer or Coll[Byte] containing decimal digits
+fn decode_sigma_int(hex: &str) -> Option<i32> {
+    let bytes = hex::decode(hex).ok()?;
+
+    if bytes.is_empty() {
+        return None;
+    }
+
+    match bytes[0] {
+        // Coll[Byte] - parse as decimal string
+        0x0e => {
+            let (len, offset) = decode_vlq(&bytes[1..])?;
+            if offset + 1 + len > bytes.len() {
+                return None;
+            }
+            let string_bytes = &bytes[1 + offset..1 + offset + len];
+            let s = String::from_utf8(string_bytes.to_vec()).ok()?;
+            s.trim().parse().ok()
+        }
+        // SInt (type 0x04) - ZigZag encoded
+        0x04 => {
+            let (value, _) = decode_vlq(&bytes[1..])?;
+            // ZigZag decode
+            Some(((value >> 1) as i32) ^ -((value & 1) as i32))
+        }
+        // SLong (type 0x05) - ZigZag encoded
+        0x05 => {
+            let (value, _) = decode_vlq(&bytes[1..])?;
+            Some(((value >> 1) as i32) ^ -((value & 1) as i32))
+        }
+        // Try parsing as raw decimal string (non-standard)
+        _ => {
+            let s = String::from_utf8(bytes).ok()?;
+            s.trim().parse().ok()
+        }
+    }
+}
+
+/// Decode a VLQ (Variable Length Quantity) encoded integer
+/// Returns (value, bytes_consumed)
+fn decode_vlq(bytes: &[u8]) -> Option<(usize, usize)> {
+    let mut value: usize = 0;
+    let mut shift = 0;
+
+    for (i, &byte) in bytes.iter().enumerate() {
+        value |= ((byte & 0x7f) as usize) << shift;
+        if byte & 0x80 == 0 {
+            return Some((value, i + 1));
+        }
+        shift += 7;
+        if shift > 35 {
+            // Overflow protection
+            return None;
+        }
+    }
+    None
 }

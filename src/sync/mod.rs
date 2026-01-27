@@ -13,6 +13,7 @@ pub use node_client::NodeClient;
 use processor::BlockProcessor;
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub is_syncing: bool,
     pub local_height: i64,
@@ -26,6 +27,7 @@ pub struct SyncStatus {
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct NodeStatus {
     pub url: String,
     pub connected: bool,
