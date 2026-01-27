@@ -37,15 +37,17 @@ pub struct NodeInfo {
     pub peers_count: Option<i32>,
     #[serde(alias = "unconfirmedCount")]
     pub unconfirmed_count: Option<i32>,
-    pub difficulty: Option<i64>,
+    // Use serde_json::Number to handle large integers that overflow i64
+    pub difficulty: Option<serde_json::Number>,
     #[serde(alias = "currentTime")]
     pub current_time: Option<i64>,
     #[serde(alias = "launchTime")]
     pub launch_time: Option<i64>,
+    // These can be very large numbers, use serde_json::Number
     #[serde(alias = "headersScore")]
-    pub headers_score: Option<i64>,
+    pub headers_score: Option<serde_json::Number>,
     #[serde(alias = "fullBlocksScore")]
-    pub full_blocks_score: Option<i64>,
+    pub full_blocks_score: Option<serde_json::Number>,
     #[serde(alias = "genesisBlockId")]
     pub genesis_block_id: Option<String>,
     pub parameters: Option<serde_json::Value>,
