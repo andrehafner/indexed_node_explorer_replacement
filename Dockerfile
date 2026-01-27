@@ -21,6 +21,9 @@ RUN cargo build --release && rm -rf src target/release/ergo-index*
 # Copy actual source
 COPY src ./src
 
+# Touch source files to ensure cargo detects the change
+RUN find src -name "*.rs" -exec touch {} +
+
 # Build the application
 RUN cargo build --release
 
