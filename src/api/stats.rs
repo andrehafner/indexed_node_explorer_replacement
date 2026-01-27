@@ -10,6 +10,14 @@ use crate::models::{ApiInfo, Epoch, NetworkStats, PaginatedResponse, Pagination}
 use crate::AppState;
 
 /// GET /api/v1/info - Get API info
+#[utoipa::path(
+    get,
+    path = "/info",
+    tag = "stats",
+    responses(
+        (status = 200, description = "API information", body = ApiInfo)
+    )
+)]
 pub async fn get_info(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<ApiInfo>, (StatusCode, String)> {
@@ -24,6 +32,14 @@ pub async fn get_info(
 }
 
 /// GET /api/v1/stats - Get explorer statistics
+#[utoipa::path(
+    get,
+    path = "/stats",
+    tag = "stats",
+    responses(
+        (status = 200, description = "Explorer statistics")
+    )
+)]
 pub async fn get_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
@@ -75,6 +91,14 @@ pub async fn get_stats(
 }
 
 /// GET /api/v1/stats/network - Get network statistics
+#[utoipa::path(
+    get,
+    path = "/networkState",
+    tag = "stats",
+    responses(
+        (status = 200, description = "Network state", body = NetworkStats)
+    )
+)]
 pub async fn get_network_stats(
     State(state): State<Arc<AppState>>,
 ) -> Result<Json<NetworkStats>, (StatusCode, String)> {

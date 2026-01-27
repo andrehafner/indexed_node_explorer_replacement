@@ -18,6 +18,17 @@ pub struct SearchQuery {
 }
 
 /// GET /api/v1/search - Universal search
+#[utoipa::path(
+    get,
+    path = "/search",
+    tag = "search",
+    params(
+        ("query" = String, Query, description = "Search query (block height, ID, tx ID, address, token name)")
+    ),
+    responses(
+        (status = 200, description = "Search results", body = Vec<SearchResult>)
+    )
+)]
 pub async fn search(
     State(state): State<Arc<AppState>>,
     Query(params): Query<SearchQuery>,
