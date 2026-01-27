@@ -31,6 +31,20 @@ pub struct StreamQuery {
 fn default_limit() -> i64 { 20 }
 
 /// GET /api/v1/transactions - Get list of transactions
+#[utoipa::path(
+    get,
+    path = "/transactions",
+    tag = "transactions",
+    params(
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page"),
+        ("sortDirection" = Option<String>, Query, description = "Sort direction: asc, desc")
+    ),
+    responses(
+        (status = 200, description = "Transaction list", body = PaginatedResponse<TransactionSummary>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_transactions(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TxQuery>,
@@ -69,6 +83,19 @@ pub async fn get_transactions(
 }
 
 /// GET /api/v1/transactions/:id - Get transaction by ID
+#[utoipa::path(
+    get,
+    path = "/transactions/{id}",
+    tag = "transactions",
+    params(
+        ("id" = String, Path, description = "Transaction ID")
+    ),
+    responses(
+        (status = 200, description = "Transaction details", body = Transaction),
+        (status = 404, description = "Transaction not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_transaction(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -149,6 +176,19 @@ pub async fn get_transaction(
 }
 
 /// GET /api/v1/transactions/byBlock/:blockId - Get transactions in a block
+#[utoipa::path(
+    get,
+    path = "/transactions/byBlockId/{blockId}",
+    tag = "transactions",
+    params(
+        ("blockId" = String, Path, description = "Block ID"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Transactions in block", body = PaginatedResponse<TransactionSummary>)
+    )
+)]
 pub async fn get_transactions_by_block(
     State(state): State<Arc<AppState>>,
     Path(block_id): Path<String>,
@@ -190,6 +230,19 @@ pub async fn get_transactions_by_block(
 }
 
 /// GET /api/v1/transactions/byAddress/:address - Get transactions for an address
+#[utoipa::path(
+    get,
+    path = "/addresses/{address}/transactions",
+    tag = "addresses",
+    params(
+        ("address" = String, Path, description = "Ergo address"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Address transactions", body = PaginatedResponse<TransactionSummary>)
+    )
+)]
 pub async fn get_transactions_by_address(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,

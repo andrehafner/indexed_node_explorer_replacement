@@ -25,6 +25,21 @@ pub struct BlocksQuery {
 fn default_limit() -> i64 { 20 }
 
 /// GET /api/v1/blocks - Get list of blocks
+#[utoipa::path(
+    get,
+    path = "/blocks",
+    tag = "blocks",
+    params(
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page (max 100)"),
+        ("sortBy" = Option<String>, Query, description = "Sort field: height, timestamp, difficulty"),
+        ("sortDirection" = Option<String>, Query, description = "Sort direction: asc, desc")
+    ),
+    responses(
+        (status = 200, description = "List of blocks", body = PaginatedResponse<BlockSummary>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_blocks(
     State(state): State<Arc<AppState>>,
     Query(params_query): Query<BlocksQuery>,
@@ -70,6 +85,19 @@ pub async fn get_blocks(
 }
 
 /// GET /api/v1/blocks/:id - Get block by ID or height
+#[utoipa::path(
+    get,
+    path = "/blocks/{id}",
+    tag = "blocks",
+    params(
+        ("id" = String, Path, description = "Block ID (hex) or height (number)")
+    ),
+    responses(
+        (status = 200, description = "Block details", body = Block),
+        (status = 404, description = "Block not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_block(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
@@ -113,6 +141,19 @@ pub async fn get_block(
 }
 
 /// GET /api/v1/blocks/headers - Get recent block headers
+#[utoipa::path(
+    get,
+    path = "/blocks/headers",
+    tag = "blocks",
+    params(
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Block headers", body = Vec<BlockSummary>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_headers(
     State(state): State<Arc<AppState>>,
     Query(pag): Query<Pagination>,
@@ -144,6 +185,19 @@ pub async fn get_headers(
 }
 
 /// GET /api/v1/blocks/at/:height - Get block at specific height
+#[utoipa::path(
+    get,
+    path = "/blocks/at/{height}",
+    tag = "blocks",
+    params(
+        ("height" = i64, Path, description = "Block height")
+    ),
+    responses(
+        (status = 200, description = "Block at height", body = Block),
+        (status = 404, description = "Block not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_block_at_height(
     State(state): State<Arc<AppState>>,
     Path(height): Path<i64>,
@@ -181,6 +235,20 @@ pub async fn get_block_at_height(
 }
 
 /// GET /api/v1/blocks/byMiner/:address - Get blocks by miner address
+#[utoipa::path(
+    get,
+    path = "/blocks/byMiner/{address}",
+    tag = "blocks",
+    params(
+        ("address" = String, Path, description = "Miner address"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Blocks by miner", body = PaginatedResponse<BlockSummary>),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_blocks_by_miner(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,

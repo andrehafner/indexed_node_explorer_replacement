@@ -23,6 +23,18 @@ pub struct TokenSearchQuery {
 fn default_limit() -> i64 { 20 }
 
 /// GET /api/v1/tokens - Get list of tokens
+#[utoipa::path(
+    get,
+    path = "/tokens",
+    tag = "tokens",
+    params(
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Token list", body = PaginatedResponse<TokenSummary>)
+    )
+)]
 pub async fn get_tokens(
     State(state): State<Arc<AppState>>,
     Query(params): Query<Pagination>,
@@ -56,6 +68,18 @@ pub async fn get_tokens(
 }
 
 /// GET /api/v1/tokens/:tokenId - Get token by ID
+#[utoipa::path(
+    get,
+    path = "/tokens/{tokenId}",
+    tag = "tokens",
+    params(
+        ("tokenId" = String, Path, description = "Token ID")
+    ),
+    responses(
+        (status = 200, description = "Token details", body = Token),
+        (status = 404, description = "Token not found")
+    )
+)]
 pub async fn get_token(
     State(state): State<Arc<AppState>>,
     Path(token_id): Path<String>,
@@ -86,6 +110,19 @@ pub async fn get_token(
 }
 
 /// GET /api/v1/tokens/search - Search tokens by name
+#[utoipa::path(
+    get,
+    path = "/tokens/search",
+    tag = "tokens",
+    params(
+        ("query" = Option<String>, Query, description = "Search query"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Search results", body = PaginatedResponse<TokenSummary>)
+    )
+)]
 pub async fn search_tokens(
     State(state): State<Arc<AppState>>,
     Query(params): Query<TokenSearchQuery>,
@@ -126,6 +163,19 @@ pub async fn search_tokens(
 }
 
 /// GET /api/v1/tokens/:tokenId/holders - Get token holders
+#[utoipa::path(
+    get,
+    path = "/tokens/{tokenId}/holders",
+    tag = "tokens",
+    params(
+        ("tokenId" = String, Path, description = "Token ID"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Token holders", body = PaginatedResponse<TokenHolder>)
+    )
+)]
 pub async fn get_token_holders(
     State(state): State<Arc<AppState>>,
     Path(token_id): Path<String>,
@@ -198,7 +248,7 @@ pub async fn get_tokens_by_address(
     Ok(Json(tokens))
 }
 
-#[derive(Debug, Clone, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize, utoipa::ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenHolder {
     pub address: String,
