@@ -10,6 +10,19 @@ use crate::models::{AddressInfo, Balance, PaginatedResponse, Pagination, TokenBa
 use crate::AppState;
 
 /// GET /api/v1/addresses/:address - Get address info
+#[utoipa::path(
+    get,
+    path = "/addresses/{address}",
+    tag = "addresses",
+    params(
+        ("address" = String, Path, description = "Ergo address")
+    ),
+    responses(
+        (status = 200, description = "Address information with balance", body = AddressInfo),
+        (status = 404, description = "Address not found"),
+        (status = 500, description = "Internal server error")
+    )
+)]
 pub async fn get_address(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,

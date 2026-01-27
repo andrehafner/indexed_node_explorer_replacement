@@ -5,6 +5,7 @@ use std::sync::Arc;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
+use crate::api::{addresses, blocks, boxes, search, stats, tokens, transactions, wallet};
 use crate::models::*;
 use crate::AppState;
 
@@ -43,6 +44,40 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
         (name = "search", description = "Search functionality"),
         (name = "wallet", description = "Node wallet operations")
     ),
+    paths(
+        // Blocks
+        blocks::get_blocks,
+        blocks::get_block,
+        blocks::get_headers,
+        blocks::get_block_at_height,
+        blocks::get_blocks_by_miner,
+        // Transactions
+        transactions::get_transactions,
+        transactions::get_transaction,
+        transactions::get_transactions_by_block,
+        transactions::get_transactions_by_address,
+        // Addresses
+        addresses::get_address,
+        // Boxes
+        boxes::get_box,
+        boxes::get_boxes_by_address,
+        boxes::get_unspent_boxes_by_address,
+        // Tokens
+        tokens::get_tokens,
+        tokens::get_token,
+        tokens::search_tokens,
+        tokens::get_token_holders,
+        // Stats
+        stats::get_info,
+        stats::get_stats,
+        stats::get_network_stats,
+        // Search
+        search::search,
+        // Wallet
+        wallet::get_status,
+        wallet::get_addresses,
+        wallet::get_balances,
+    ),
     components(
         schemas(
             Block,
@@ -68,6 +103,7 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
             WalletStatus,
             WalletBalance,
             PaymentRequest,
+            tokens::TokenHolder,
         )
     )
 )]

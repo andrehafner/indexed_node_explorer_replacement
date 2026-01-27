@@ -29,6 +29,18 @@ pub struct EpochStreamQuery {
 fn default_limit() -> i64 { 100 }
 
 /// GET /api/v1/boxes/:boxId - Get box by ID
+#[utoipa::path(
+    get,
+    path = "/boxes/{boxId}",
+    tag = "boxes",
+    params(
+        ("boxId" = String, Path, description = "Box ID")
+    ),
+    responses(
+        (status = 200, description = "Box details", body = Output),
+        (status = 404, description = "Box not found")
+    )
+)]
 pub async fn get_box(
     State(state): State<Arc<AppState>>,
     Path(box_id): Path<String>,
@@ -37,6 +49,19 @@ pub async fn get_box(
 }
 
 /// GET /api/v1/boxes/byAddress/:address - Get all boxes by address
+#[utoipa::path(
+    get,
+    path = "/boxes/byAddress/{address}",
+    tag = "boxes",
+    params(
+        ("address" = String, Path, description = "Ergo address"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Boxes by address", body = PaginatedResponse<Output>)
+    )
+)]
 pub async fn get_boxes_by_address(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
@@ -46,6 +71,19 @@ pub async fn get_boxes_by_address(
 }
 
 /// GET /api/v1/boxes/unspent/byAddress/:address - Get unspent boxes by address
+#[utoipa::path(
+    get,
+    path = "/boxes/unspent/byAddress/{address}",
+    tag = "boxes",
+    params(
+        ("address" = String, Path, description = "Ergo address"),
+        ("offset" = Option<i64>, Query, description = "Pagination offset"),
+        ("limit" = Option<i64>, Query, description = "Results per page")
+    ),
+    responses(
+        (status = 200, description = "Unspent boxes by address", body = PaginatedResponse<Output>)
+    )
+)]
 pub async fn get_unspent_boxes_by_address(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
