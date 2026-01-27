@@ -113,13 +113,14 @@ impl Database {
     }
 
     // Sync status methods
+    // Returns 0 when empty, so syncing starts at height 1 (Ergo genesis block)
     pub fn get_sync_height(&self) -> Result<i64> {
         let result: Option<i64> = self.query_one(
-            "SELECT COALESCE(MAX(height), -1) FROM blocks",
+            "SELECT COALESCE(MAX(height), 0) FROM blocks WHERE main_chain = TRUE",
             [],
             |row| row.get(0),
         )?;
-        Ok(result.unwrap_or(-1))
+        Ok(result.unwrap_or(0))
     }
 
     pub fn get_stats(&self) -> Result<DbStats> {
