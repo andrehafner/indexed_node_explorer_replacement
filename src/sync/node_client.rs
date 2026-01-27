@@ -12,27 +12,46 @@ pub struct NodeClient {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NodeInfo {
-    pub name: String,
-    pub app_version: String,
+    #[serde(default)]
+    pub name: Option<String>,
+    #[serde(default)]
+    pub app_version: Option<String>,
     pub full_height: Option<i64>,
+    #[serde(alias = "headersHeight")]
     pub headers_height: Option<i64>,
+    #[serde(alias = "maxPeerHeight")]
     pub max_peer_height: Option<i64>,
+    #[serde(alias = "bestFullHeaderId")]
     pub best_full_header_id: Option<String>,
+    #[serde(alias = "bestHeaderId")]
     pub best_header_id: Option<String>,
+    #[serde(alias = "stateRoot")]
     pub state_root: Option<String>,
+    #[serde(alias = "stateType")]
     pub state_type: Option<String>,
+    #[serde(alias = "stateVersion")]
     pub state_version: Option<String>,
+    #[serde(alias = "isMining")]
     pub is_mining: Option<bool>,
+    #[serde(alias = "peersCount")]
     pub peers_count: Option<i32>,
+    #[serde(alias = "unconfirmedCount")]
     pub unconfirmed_count: Option<i32>,
     pub difficulty: Option<i64>,
+    #[serde(alias = "currentTime")]
     pub current_time: Option<i64>,
+    #[serde(alias = "launchTime")]
     pub launch_time: Option<i64>,
+    #[serde(alias = "headersScore")]
     pub headers_score: Option<i64>,
+    #[serde(alias = "fullBlocksScore")]
     pub full_blocks_score: Option<i64>,
+    #[serde(alias = "genesisBlockId")]
     pub genesis_block_id: Option<String>,
     pub parameters: Option<serde_json::Value>,
+    #[serde(alias = "eip27Supported")]
     pub eip27_supported: Option<bool>,
+    #[serde(alias = "restApiUrl")]
     pub rest_api_url: Option<String>,
 }
 
@@ -153,7 +172,11 @@ impl NodeClient {
             anyhow::bail!("Node returned status {}", resp.status());
         }
 
-        resp.json().await.context("Failed to parse node info")
+        let text = resp.text().await.context("Failed to read response")?;
+
+        serde_json::from_str(&text).with_context(|| {
+            format!("Failed to parse node info. Response: {}", &text[..text.len().min(500)])
+        })
     }
 
     pub async fn get_block_ids_at_height(&self, height: i64) -> Result<Vec<String>> {
