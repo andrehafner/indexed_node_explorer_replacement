@@ -1,10 +1,12 @@
+//! Synchronization service for indexing blockchain data
+
 mod node_client;
 mod processor;
 
 use anyhow::Result;
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
+use tokio::sync::{Mutex, RwLock};
 
 use crate::db::Database;
 pub use node_client::NodeClient;
@@ -36,7 +38,7 @@ pub struct SyncService {
     nodes: Vec<NodeClient>,
     db: Database,
     batch_size: u32,
-    processor: BlockProcessor,
+    processor: Mutex<BlockProcessor>,
 
     // Sync state
     is_syncing: AtomicBool,
@@ -72,7 +74,7 @@ impl SyncService {
             .collect();
 
         Self {
-            processor: BlockProcessor::new(db.clone()),
+            processor: Mutex::new(BlockProcessor::new(db.clone())),
             nodes,
             db,
             batch_size,
@@ -101,7 +103,7 @@ impl SyncService {
 
     async fn sync_once(&self) -> Result<()> {
         // Check node health and get best height
-        let (best_node_idx, node_height) = self.find_best_node().await?;
+        let (_best_node_idx, node_height) = self.find_best_node().await?;
 
         self.node_height.store(node_height, Ordering::SeqCst);
 
@@ -150,9 +152,11 @@ impl SyncService {
                 .await?;
 
             // Process blocks sequentially (must maintain order)
+            let mut processor = self.processor.lock().await;
             for block in blocks {
-                self.processor.process_block(&block).await?;
+                processor.process_block(&block).await?;
             }
+            drop(processor);
 
             self.blocks_synced
                 .fetch_add(batch_size as u64, Ordering::SeqCst);

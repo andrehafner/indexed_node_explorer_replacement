@@ -1,7 +1,9 @@
 pub mod ergo_tree;
 
 use sha2::{Digest, Sha256};
-use blake2::{Blake2b256, Blake2b};
+use blake2::{Blake2b, digest::consts::U32};
+
+type Blake2b256 = Blake2b<U32>;
 
 /// Compute Blake2b256 hash
 pub fn blake2b256(data: &[u8]) -> Vec<u8> {

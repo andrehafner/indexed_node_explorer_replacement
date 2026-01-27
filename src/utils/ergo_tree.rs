@@ -3,8 +3,9 @@
 //! This module provides basic address derivation from ErgoTree hex strings.
 //! For full compatibility, consider using the ergo-lib crate.
 
-use sha2::{Digest, Sha256};
-use blake2::Blake2b256;
+use blake2::{Blake2b, Digest, digest::consts::U32};
+
+type Blake2b256 = Blake2b<U32>;
 
 const MAINNET_P2PK_PREFIX: u8 = 0x01;  // P2PK address
 const MAINNET_P2S_PREFIX: u8 = 0x02;   // P2S address
@@ -69,7 +70,6 @@ fn encode_p2s_address(tree: &[u8], mainnet: bool) -> String {
 
 /// Compute Blake2b256 hash
 fn blake2b256(data: &[u8]) -> Vec<u8> {
-    use blake2::Digest;
     let mut hasher = Blake2b256::new();
     hasher.update(data);
     hasher.finalize().to_vec()

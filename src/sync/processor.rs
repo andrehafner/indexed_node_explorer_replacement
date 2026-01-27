@@ -1,4 +1,7 @@
+//! Block processor for indexing blockchain data
+
 use anyhow::{Context, Result};
+use duckdb::params;
 use serde_json::Value;
 
 use crate::db::Database;
@@ -56,7 +59,7 @@ impl BlockProcessor {
 
         let block_coins: i64 = transactions
             .iter()
-            .flat_map(|tx| {
+            .map(|tx| {
                 tx.get("outputs")
                     .and_then(|o| o.as_array())
                     .map(|outputs| {
@@ -95,18 +98,18 @@ impl BlockProcessor {
                 block_coins, tx_count, miner_address, miner_reward, main_chain, global_index
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
             ON CONFLICT (block_id) DO UPDATE SET main_chain = TRUE",
-            &[
-                &block_id,
-                &parent_id,
-                &height,
-                &timestamp,
-                &difficulty,
-                &block_size,
-                &block_coins,
-                &tx_count,
-                &miner_address.as_deref(),
-                &miner_reward,
-                &self.global_block_index,
+            params![
+                block_id,
+                parent_id,
+                height,
+                timestamp,
+                difficulty,
+                block_size,
+                block_coins,
+                tx_count,
+                miner_address,
+                miner_reward,
+                self.global_block_index
             ],
         )?;
 
@@ -151,17 +154,17 @@ impl BlockProcessor {
                 global_index, coinbase, size, input_count, output_count
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (tx_id) DO NOTHING",
-            &[
-                &tx_id,
-                &block_id,
-                &height,
-                &timestamp,
-                &tx_idx,
-                &self.global_tx_index,
-                &coinbase,
-                &size,
-                &input_count,
-                &output_count,
+            params![
+                tx_id,
+                block_id,
+                height,
+                timestamp,
+                tx_idx,
+                self.global_tx_index,
+                coinbase,
+                size,
+                input_count,
+                output_count
             ],
         )?;
 
@@ -198,7 +201,7 @@ impl BlockProcessor {
         // Mark box as spent
         self.db.execute(
             "UPDATE boxes SET spent_tx_id = ?, spent_index = ?, spent_height = ? WHERE box_id = ?",
-            &[&tx_id, &input_idx, &height, &box_id],
+            params![tx_id, input_idx, height, box_id],
         )?;
 
         // Record input
@@ -207,7 +210,7 @@ impl BlockProcessor {
             "INSERT INTO inputs (id, tx_id, box_id, input_index, proof_bytes)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT DO NOTHING",
-            &[&self.input_id, &tx_id, &box_id, &input_idx, &proof_bytes],
+            params![self.input_id, tx_id, box_id, input_idx, proof_bytes],
         )?;
 
         Ok(())
@@ -221,7 +224,7 @@ impl BlockProcessor {
             "INSERT INTO data_inputs (id, tx_id, box_id, input_index)
              VALUES (?, ?, ?, ?)
              ON CONFLICT DO NOTHING",
-            &[&self.data_input_id, &tx_id, &box_id, &input_idx],
+            params![self.data_input_id, tx_id, box_id, input_idx],
         )?;
 
         Ok(())
@@ -230,16 +233,18 @@ impl BlockProcessor {
     fn process_output(&mut self, output: &Value, tx_id: &str, height: i64, output_idx: i32) -> Result<()> {
         let box_id = output.get("boxId").and_then(|v| v.as_str()).context("Missing boxId")?;
         let value = output.get("value").and_then(|v| v.as_i64()).unwrap_or(0);
-        let ergo_tree = output.get("ergoTree").and_then(|v| v.as_str()).unwrap_or("");
+        let ergo_tree_hex = output.get("ergoTree").and_then(|v| v.as_str()).unwrap_or("");
         let creation_height = output.get("creationHeight").and_then(|v| v.as_i64()).unwrap_or(height);
         let additional_registers = output.get("additionalRegisters");
         let assets = output.get("assets").and_then(|v| v.as_array());
 
         // Derive address from ergo_tree
-        let address = ergo_tree::ergo_tree_to_address(ergo_tree).unwrap_or_else(|| ergo_tree.to_string());
-        let template_hash = ergo_tree::ergo_tree_template_hash(ergo_tree);
+        let address = ergo_tree::ergo_tree_to_address(ergo_tree_hex).unwrap_or_else(|| ergo_tree_hex.to_string());
+        let template_hash = ergo_tree::ergo_tree_template_hash(ergo_tree_hex);
 
         self.global_box_index += 1;
+
+        let registers_json = additional_registers.map(|r| r.to_string());
 
         // Insert box
         self.db.execute(
@@ -249,18 +254,18 @@ impl BlockProcessor {
                 additional_registers
             ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (box_id) DO NOTHING",
-            &[
-                &box_id,
-                &tx_id,
-                &output_idx,
-                &ergo_tree,
-                &template_hash,
-                &address,
-                &value,
-                &creation_height,
-                &height,
-                &self.global_box_index,
-                &additional_registers.map(|r| r.to_string()),
+            params![
+                box_id,
+                tx_id,
+                output_idx,
+                ergo_tree_hex,
+                template_hash,
+                address,
+                value,
+                creation_height,
+                height,
+                self.global_box_index,
+                registers_json
             ],
         )?;
 
@@ -288,7 +293,7 @@ impl BlockProcessor {
             "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index)
              VALUES (?, ?, ?, ?, ?)
              ON CONFLICT DO NOTHING",
-            &[&self.box_asset_id, &box_id, &token_id, &amount, &asset_idx],
+            params![self.box_asset_id, box_id, token_id, amount, asset_idx],
         )?;
 
         // Check if this is a new token (first emission)
@@ -304,7 +309,7 @@ impl BlockProcessor {
         // Check if token already exists
         let exists: Option<i32> = self.db.query_one(
             "SELECT 1 FROM tokens WHERE token_id = ?",
-            &[&token_id],
+            [token_id],
             |row| row.get(0),
         )?;
 
@@ -315,7 +320,7 @@ impl BlockProcessor {
                 "INSERT INTO tokens (token_id, box_id, emission_amount, creation_height)
                  VALUES (?, ?, ?, ?)
                  ON CONFLICT (token_id) DO NOTHING",
-                &[&token_id, &box_id, &amount, &height],
+                params![token_id, box_id, amount, height],
             )?;
         }
 
@@ -330,9 +335,9 @@ impl BlockProcessor {
              VALUES (?, 1, ?, ?, ?)
              ON CONFLICT (address) DO UPDATE SET
                 tx_count = address_stats.tx_count + 1,
-                last_seen_height = ?,
-                updated_at = ?",
-            &[&address, &height, &height, &now, &height, &now],
+                last_seen_height = EXCLUDED.last_seen_height,
+                updated_at = EXCLUDED.updated_at",
+            params![address, height, height, now],
         )?;
 
         Ok(())
@@ -342,19 +347,19 @@ impl BlockProcessor {
         // Calculate basic network stats
         let total_coins: i64 = self.db.query_one(
             "SELECT COALESCE(SUM(value), 0) FROM boxes WHERE spent_tx_id IS NULL",
-            &[],
+            [],
             |row| row.get(0),
         )?.unwrap_or(0);
 
-        let block_size: i32 = self.db.query_one(
+        let block_size: i64 = self.db.query_one(
             "SELECT COALESCE(block_size, 0) FROM blocks WHERE height = ?",
-            &[&height],
+            [height],
             |row| row.get(0),
         )?.unwrap_or(0);
 
         let block_coins: i64 = self.db.query_one(
             "SELECT COALESCE(block_coins, 0) FROM blocks WHERE height = ?",
-            &[&height],
+            [height],
             |row| row.get(0),
         )?.unwrap_or(0);
 
@@ -366,19 +371,8 @@ impl BlockProcessor {
                 timestamp, height, difficulty, block_size, block_coins, total_coins, hashrate
             ) VALUES (?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT (timestamp) DO UPDATE SET
-                height = ?, difficulty = ?, hashrate = ?",
-            &[
-                &timestamp,
-                &height,
-                &difficulty,
-                &block_size,
-                &block_coins,
-                &total_coins,
-                &hashrate,
-                &height,
-                &difficulty,
-                &hashrate,
-            ],
+                height = EXCLUDED.height, difficulty = EXCLUDED.difficulty, hashrate = EXCLUDED.hashrate",
+            params![timestamp, height, difficulty, block_size, block_coins, total_coins, hashrate],
         )?;
 
         Ok(())

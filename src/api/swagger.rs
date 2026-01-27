@@ -1,3 +1,5 @@
+//! OpenAPI/Swagger documentation
+
 use axum::Router;
 use std::sync::Arc;
 use utoipa::OpenApi;
@@ -41,52 +43,6 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
         (name = "search", description = "Search functionality"),
         (name = "wallet", description = "Node wallet operations")
     ),
-    paths(
-        // Blocks
-        crate::api::blocks::get_blocks,
-        crate::api::blocks::get_block,
-        crate::api::blocks::get_headers,
-        crate::api::blocks::get_block_at_height,
-        crate::api::blocks::get_blocks_by_miner,
-        // Transactions
-        crate::api::transactions::get_transactions,
-        crate::api::transactions::get_transaction,
-        crate::api::transactions::get_transactions_by_block,
-        crate::api::transactions::get_transactions_by_address,
-        crate::api::transactions::submit_transaction,
-        // Addresses
-        crate::api::addresses::get_address,
-        crate::api::addresses::get_balance_total,
-        crate::api::addresses::get_balance_confirmed,
-        crate::api::addresses::get_address_transactions,
-        // Boxes
-        crate::api::boxes::get_box,
-        crate::api::boxes::get_boxes_by_address,
-        crate::api::boxes::get_unspent_boxes_by_address,
-        crate::api::boxes::get_boxes_by_token,
-        crate::api::boxes::get_unspent_by_token,
-        // Tokens
-        crate::api::tokens::get_tokens,
-        crate::api::tokens::get_token,
-        crate::api::tokens::search_tokens,
-        crate::api::tokens::get_token_holders,
-        crate::api::tokens::get_tokens_by_address,
-        // Mempool
-        crate::api::mempool::get_mempool_transactions,
-        crate::api::mempool::get_mempool_size,
-        // Stats
-        crate::api::stats::get_info,
-        crate::api::stats::get_stats,
-        crate::api::stats::get_network_stats,
-        crate::api::stats::get_epochs,
-        // Search
-        crate::api::search::search,
-        crate::api::search::ergo_tree_to_address,
-        // Wallet
-        crate::api::wallet::get_status,
-        crate::api::wallet::get_addresses,
-        crate::api::wallet::get_balances,
-    ),
     components(
         schemas(
             Block,
@@ -107,10 +63,6 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
             SearchResult,
             ApiInfo,
             Pagination,
-            PaginatedResponse<BlockSummary>,
-            PaginatedResponse<TransactionSummary>,
-            PaginatedResponse<Output>,
-            PaginatedResponse<TokenSummary>,
             BoxSearchQuery,
             Epoch,
             WalletStatus,

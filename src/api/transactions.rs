@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -36,7 +37,7 @@ pub async fn get_transactions(
 ) -> Result<Json<PaginatedResponse<TransactionSummary>>, (StatusCode, String)> {
     let total: i64 = state
         .db
-        .query_one("SELECT COUNT(*) FROM transactions", &[], |row| row.get(0))
+        .query_one("SELECT COUNT(*) FROM transactions", [], |row| row.get(0))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .unwrap_or(0);
 
@@ -52,7 +53,7 @@ pub async fn get_transactions(
 
     let items = state
         .db
-        .query_all(&sql, &[&params.limit, &params.offset], |row| {
+        .query_all(&sql, params![params.limit, params.offset], |row| {
             Ok(TransactionSummary {
                 id: row.get(0)?,
                 timestamp: row.get(1)?,
@@ -79,7 +80,7 @@ pub async fn get_transaction(
             "SELECT tx_id, block_id, inclusion_height, timestamp, index_in_block,
                     global_index, coinbase, size
              FROM transactions WHERE tx_id = ?",
-            &[&id],
+            [&id],
             |row| {
                 Ok((
                     row.get::<_, String>(0)?,  // tx_id
@@ -105,7 +106,7 @@ pub async fn get_transaction(
              LEFT JOIN boxes b ON i.box_id = b.box_id
              WHERE i.tx_id = ?
              ORDER BY i.input_index",
-            &[&id],
+            [&id],
             |row| {
                 Ok(Input {
                     box_id: row.get(0)?,
@@ -127,7 +128,7 @@ pub async fn get_transaction(
         .db
         .query_all(
             "SELECT box_id FROM data_inputs WHERE tx_id = ? ORDER BY input_index",
-            &[&id],
+            [&id],
             |row| Ok(DataInput { box_id: row.get(0)? }),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -157,7 +158,7 @@ pub async fn get_transactions_by_block(
         .db
         .query_one(
             "SELECT COUNT(*) FROM transactions WHERE block_id = ?",
-            &[&block_id],
+            [&block_id],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -171,7 +172,7 @@ pub async fn get_transactions_by_block(
              WHERE block_id = ?
              ORDER BY index_in_block ASC
              LIMIT ? OFFSET ?",
-            &[&block_id, &params.limit, &params.offset],
+            params![block_id, params.limit, params.offset],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,
@@ -207,7 +208,7 @@ pub async fn get_transactions_by_address(
                  JOIN boxes b ON i.box_id = b.box_id
                  WHERE b.address = ?
              )",
-            &[&address, &address],
+            params![address, address],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -227,7 +228,7 @@ pub async fn get_transactions_by_address(
              )
              ORDER BY t.inclusion_height DESC
              LIMIT ? OFFSET ?",
-            &[&address, &address, &params.limit, &params.offset],
+            params![address, address, params.limit, params.offset],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,
@@ -257,7 +258,7 @@ pub async fn get_transactions_by_template(
              FROM inputs i
              JOIN boxes b ON i.box_id = b.box_id
              WHERE b.ergo_tree_template_hash = ?",
-            &[&hash],
+            [&hash],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -273,7 +274,7 @@ pub async fn get_transactions_by_template(
              WHERE b.ergo_tree_template_hash = ?
              ORDER BY t.inclusion_height DESC
              LIMIT ? OFFSET ?",
-            &[&hash, &params.limit, &params.offset],
+            params![hash, params.limit, params.offset],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,
@@ -305,7 +306,7 @@ pub async fn stream_transactions_by_gix(
              WHERE global_index >= ?
              ORDER BY global_index ASC
              LIMIT ?",
-            &[&min_gix, &params.limit],
+            params![min_gix, params.limit],
             |row| {
                 Ok(TransactionSummary {
                     id: row.get(0)?,
@@ -346,7 +347,7 @@ fn get_outputs_for_tx(state: &Arc<AppState>, tx_id: &str) -> anyhow::Result<Vec<
         "SELECT box_id, tx_id, output_index, ergo_tree, address, value,
                 creation_height, settlement_height, additional_registers, spent_tx_id
          FROM boxes WHERE tx_id = ? ORDER BY output_index",
-        &[&tx_id],
+        [tx_id],
         |row| {
             Ok((
                 row.get::<_, String>(0)?,    // box_id
@@ -372,7 +373,7 @@ fn get_outputs_for_tx(state: &Arc<AppState>, tx_id: &str) -> anyhow::Result<Vec<
              LEFT JOIN tokens t ON ba.token_id = t.token_id
              WHERE ba.box_id = ?
              ORDER BY ba.asset_index",
-            &[&output.0],
+            [&output.0],
             |row| {
                 Ok(BoxAsset {
                     token_id: row.get(0)?,

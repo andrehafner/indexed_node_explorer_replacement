@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -158,7 +159,7 @@ pub async fn stream_unspent_by_epochs(
              WHERE spent_tx_id IS NULL AND creation_height >= ?
              ORDER BY global_index ASC
              LIMIT ?",
-            &[&min_height, &params.limit],
+            params![min_height, params.limit],
             |row| box_from_row(row),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
@@ -247,7 +248,7 @@ async fn get_box_by_id(state: &Arc<AppState>, box_id: &str) -> Result<Json<Outpu
             "SELECT box_id, tx_id, output_index, ergo_tree, address, value,
                     creation_height, settlement_height, additional_registers, spent_tx_id
              FROM boxes WHERE box_id = ?",
-            &[&box_id],
+            [box_id],
             |row| box_from_row(row),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -271,7 +272,7 @@ async fn get_boxes_with_filter(
     let count_sql = format!("SELECT COUNT(*) FROM boxes WHERE {}{}", filter, spent_filter);
     let total: i64 = state
         .db
-        .query_one(&count_sql, &[&value], |row| row.get(0))
+        .query_one(&count_sql, [value], |row| row.get(0))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .unwrap_or(0);
 
@@ -286,7 +287,7 @@ async fn get_boxes_with_filter(
 
     let boxes = state
         .db
-        .query_all(&sql, &[&value, &params.limit, &params.offset], |row| box_from_row(row))
+        .query_all(&sql, params![value, params.limit, params.offset], |row| box_from_row(row))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut items = Vec::new();
@@ -317,7 +318,7 @@ async fn get_boxes_by_token_id(
 
     let total: i64 = state
         .db
-        .query_one(&count_sql, &[&token_id], |row| row.get(0))
+        .query_one(&count_sql, [token_id], |row| row.get(0))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .unwrap_or(0);
 
@@ -334,7 +335,7 @@ async fn get_boxes_by_token_id(
 
     let boxes = state
         .db
-        .query_all(&sql, &[&token_id, &params.limit, &params.offset], |row| box_from_row(row))
+        .query_all(&sql, params![token_id, params.limit, params.offset], |row| box_from_row(row))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut items = Vec::new();
@@ -373,11 +374,11 @@ async fn stream_boxes(
     let boxes = if let Some((_, ref val)) = extra_filter {
         state
             .db
-            .query_all(&sql, &[&min_gix, val, &limit], |row| box_from_row(row))
+            .query_all(&sql, params![min_gix, val, limit], |row| box_from_row(row))
     } else {
         state
             .db
-            .query_all(&sql, &[&min_gix, &limit], |row| box_from_row(row))
+            .query_all(&sql, params![min_gix, limit], |row| box_from_row(row))
     }
     .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
@@ -397,27 +398,27 @@ async fn search_boxes_impl(
     query: &BoxSearchQuery,
     unspent_only: bool,
 ) -> Result<Json<PaginatedResponse<Output>>, (StatusCode, String)> {
-    let mut conditions = Vec::new();
-    let mut values: Vec<String> = Vec::new();
+    let mut conditions: Vec<String> = Vec::new();
+    let mut _values: Vec<String> = Vec::new();
 
     if let Some(ref hash) = query.ergo_tree_template_hash {
-        conditions.push("ergo_tree_template_hash = ?");
-        values.push(hash.clone());
+        conditions.push("ergo_tree_template_hash = ?".to_string());
+        _values.push(hash.clone());
     }
 
     if let Some(ref assets) = query.assets {
         if !assets.is_empty() {
             let placeholders: Vec<&str> = assets.iter().map(|_| "?").collect();
-            conditions.push(&format!(
+            conditions.push(format!(
                 "box_id IN (SELECT box_id FROM box_assets WHERE token_id IN ({}))",
                 placeholders.join(",")
             ));
-            values.extend(assets.iter().cloned());
+            _values.extend(assets.iter().cloned());
         }
     }
 
     if unspent_only {
-        conditions.push("spent_tx_id IS NULL");
+        conditions.push("spent_tx_id IS NULL".to_string());
     }
 
     let where_clause = if conditions.is_empty() {
@@ -431,7 +432,7 @@ async fn search_boxes_impl(
     // For simplicity, execute with no params for now (would need dynamic param handling)
     let total: i64 = state
         .db
-        .query_one(&count_sql, &[], |row| row.get(0))
+        .query_one(&count_sql, [], |row| row.get(0))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .unwrap_or(0);
 
@@ -446,7 +447,7 @@ async fn search_boxes_impl(
 
     let boxes = state
         .db
-        .query_all(&sql, &[&params.limit, &params.offset], |row| box_from_row(row))
+        .query_all(&sql, params![params.limit, params.offset], |row| box_from_row(row))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     let mut items = Vec::new();
@@ -484,7 +485,7 @@ fn enrich_box_with_assets(state: &Arc<AppState>, mut output: Output) -> anyhow::
          LEFT JOIN tokens t ON ba.token_id = t.token_id
          WHERE ba.box_id = ?
          ORDER BY ba.asset_index",
-        &[&output.box_id],
+        [&output.box_id],
         |row| {
             Ok(BoxAsset {
                 token_id: row.get(0)?,

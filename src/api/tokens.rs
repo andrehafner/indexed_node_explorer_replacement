@@ -3,6 +3,7 @@ use axum::{
     http::StatusCode,
     Json,
 };
+use duckdb::params;
 use serde::Deserialize;
 use std::sync::Arc;
 
@@ -28,7 +29,7 @@ pub async fn get_tokens(
 ) -> Result<Json<PaginatedResponse<TokenSummary>>, (StatusCode, String)> {
     let total: i64 = state
         .db
-        .query_one("SELECT COUNT(*) FROM tokens", &[], |row| row.get(0))
+        .query_one("SELECT COUNT(*) FROM tokens", [], |row| row.get(0))
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
         .unwrap_or(0);
 
@@ -39,7 +40,7 @@ pub async fn get_tokens(
              FROM tokens
              ORDER BY creation_height DESC
              LIMIT ? OFFSET ?",
-            &[&params.limit, &params.offset],
+            params![params.limit, params.offset],
             |row| {
                 Ok(TokenSummary {
                     id: row.get(0)?,
@@ -64,7 +65,7 @@ pub async fn get_token(
         .query_one(
             "SELECT token_id, box_id, emission_amount, name, description, token_type, decimals, creation_height
              FROM tokens WHERE token_id = ?",
-            &[&token_id],
+            [&token_id],
             |row| {
                 Ok(Token {
                     id: row.get(0)?,
@@ -95,7 +96,7 @@ pub async fn search_tokens(
         .db
         .query_one(
             "SELECT COUNT(*) FROM tokens WHERE name LIKE ? OR token_id LIKE ?",
-            &[&search_pattern, &search_pattern],
+            params![search_pattern, search_pattern],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -109,7 +110,7 @@ pub async fn search_tokens(
              WHERE name LIKE ? OR token_id LIKE ?
              ORDER BY creation_height DESC
              LIMIT ? OFFSET ?",
-            &[&search_pattern, &search_pattern, &params.limit, &params.offset],
+            params![search_pattern, search_pattern, params.limit, params.offset],
             |row| {
                 Ok(TokenSummary {
                     id: row.get(0)?,
@@ -137,7 +138,7 @@ pub async fn get_token_holders(
              FROM boxes b
              JOIN box_assets ba ON b.box_id = ba.box_id
              WHERE ba.token_id = ? AND b.spent_tx_id IS NULL",
-            &[&token_id],
+            [&token_id],
             |row| row.get(0),
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
@@ -153,7 +154,7 @@ pub async fn get_token_holders(
              GROUP BY b.address
              ORDER BY balance DESC
              LIMIT ? OFFSET ?",
-            &[&token_id, &params.limit, &params.offset],
+            params![token_id, params.limit, params.offset],
             |row| {
                 Ok(TokenHolder {
                     address: row.get(0)?,
@@ -182,7 +183,7 @@ pub async fn get_tokens_by_address(
              WHERE b.address = ? AND b.spent_tx_id IS NULL
              GROUP BY ba.token_id, t.name, t.decimals
              ORDER BY total DESC",
-            &[&address],
+            [&address],
             |row| {
                 Ok(TokenBalance {
                     token_id: row.get(0)?,
