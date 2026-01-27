@@ -115,7 +115,7 @@ impl Database {
     // Sync status methods
     pub fn get_sync_height(&self) -> Result<i64> {
         let result: Option<i64> = self.query_one(
-            "SELECT MAX(height) FROM blocks",
+            "SELECT COALESCE(MAX(height), -1) FROM blocks",
             [],
             |row| row.get(0),
         )?;
