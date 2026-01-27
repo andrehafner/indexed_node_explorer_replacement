@@ -21,7 +21,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             global_index BIGINT NOT NULL
         );
 
-        CREATE UNIQUE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height) WHERE main_chain = TRUE;
+        CREATE INDEX IF NOT EXISTS idx_blocks_height ON blocks(height);
+        CREATE INDEX IF NOT EXISTS idx_blocks_main_chain ON blocks(main_chain, height);
         CREATE INDEX IF NOT EXISTS idx_blocks_miner ON blocks(miner_address);
         CREATE INDEX IF NOT EXISTS idx_blocks_timestamp ON blocks(timestamp);
         CREATE INDEX IF NOT EXISTS idx_blocks_global_index ON blocks(global_index);
@@ -67,11 +68,11 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
 
         CREATE INDEX IF NOT EXISTS idx_boxes_address ON boxes(address);
         CREATE INDEX IF NOT EXISTS idx_boxes_ergo_tree_hash ON boxes(ergo_tree_template_hash);
-        CREATE INDEX IF NOT EXISTS idx_boxes_unspent ON boxes(address) WHERE spent_tx_id IS NULL;
+        CREATE INDEX IF NOT EXISTS idx_boxes_address_unspent ON boxes(address, spent_tx_id);
         CREATE INDEX IF NOT EXISTS idx_boxes_creation_height ON boxes(creation_height);
         CREATE INDEX IF NOT EXISTS idx_boxes_global_index ON boxes(global_index);
         CREATE INDEX IF NOT EXISTS idx_boxes_tx ON boxes(tx_id);
-        CREATE INDEX IF NOT EXISTS idx_boxes_spent_tx ON boxes(spent_tx_id) WHERE spent_tx_id IS NOT NULL;
+        CREATE INDEX IF NOT EXISTS idx_boxes_spent_tx ON boxes(spent_tx_id);
 
         -- Box assets (tokens in boxes)
         CREATE TABLE IF NOT EXISTS box_assets (
