@@ -104,14 +104,14 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         CREATE INDEX IF NOT EXISTS idx_tokens_height ON tokens(creation_height);
 
         -- Inputs table (for tracking spending)
+        -- NOTE: No FK on box_id - boxes may be created in different blocks processed out of order
         CREATE TABLE IF NOT EXISTS inputs (
             id BIGINT PRIMARY KEY,
             tx_id VARCHAR(64) NOT NULL,
             box_id VARCHAR(64) NOT NULL,
             input_index INTEGER NOT NULL,
             proof_bytes TEXT,
-            FOREIGN KEY (tx_id) REFERENCES transactions(tx_id),
-            FOREIGN KEY (box_id) REFERENCES boxes(box_id)
+            FOREIGN KEY (tx_id) REFERENCES transactions(tx_id)
         );
 
         CREATE INDEX IF NOT EXISTS idx_inputs_tx ON inputs(tx_id);
