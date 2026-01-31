@@ -30,10 +30,11 @@ impl Database {
     pub fn new(path: &str) -> Result<Self> {
         let conn = Connection::open(path).context("Failed to open database")?;
 
-        // Enable optimizations
+        // Enable optimizations for faster writes
         conn.execute_batch(
             "SET threads=4;
-             SET memory_limit='512MB';",
+             SET memory_limit='1GB';
+             PRAGMA enable_progress_bar=false;",
         )?;
 
         Ok(Self {
@@ -77,14 +78,35 @@ impl Database {
         Ok(())
     }
 
+    /// Execute a single SQL statement with params
     pub fn execute<P: duckdb::Params>(&self, sql: &str, params: P) -> Result<usize> {
         let conn = self.conn.lock().unwrap();
         Ok(conn.execute(sql, params)?)
     }
 
+    /// Execute a batch of SQL statements
     pub fn execute_batch(&self, sql: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         Ok(conn.execute_batch(sql)?)
+    }
+
+    /// Execute multiple statements within a transaction for better performance
+    pub fn execute_transaction<F>(&self, f: F) -> Result<()>
+    where
+        F: FnOnce(&Connection) -> Result<()>,
+    {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("BEGIN TRANSACTION", [])?;
+        match f(&conn) {
+            Ok(()) => {
+                conn.execute("COMMIT", [])?;
+                Ok(())
+            }
+            Err(e) => {
+                conn.execute("ROLLBACK", []).ok();
+                Err(e)
+            }
+        }
     }
 
     pub fn query_one<T, P, F>(&self, sql: &str, params: P, f: F) -> Result<Option<T>>
@@ -113,7 +135,6 @@ impl Database {
     }
 
     // Sync status methods
-    // Returns 0 when empty, so syncing starts at height 1 (Ergo genesis block)
     pub fn get_sync_height(&self) -> Result<i64> {
         let result: Option<i64> = self.query_one(
             "SELECT COALESCE(MAX(height), 0) FROM blocks WHERE main_chain = TRUE",

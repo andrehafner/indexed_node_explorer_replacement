@@ -1,7 +1,7 @@
 //! Block processor for indexing blockchain data
 
 use anyhow::{Context, Result};
-use duckdb::params;
+use duckdb::{params, Connection};
 use serde_json::Value;
 
 use crate::db::Database;
@@ -30,7 +30,7 @@ impl BlockProcessor {
         }
     }
 
-    pub async fn process_block(&mut self, block: &Value) -> Result<()> {
+    pub fn process_block(&mut self, block: &Value) -> Result<()> {
         let header = block.get("header").context("Missing header")?;
         let block_txs = block.get("blockTransactions").context("Missing blockTransactions")?;
         let transactions = block_txs
@@ -39,8 +39,8 @@ impl BlockProcessor {
             .context("Missing transactions array")?;
 
         // Extract header data
-        let block_id = header.get("id").and_then(|v| v.as_str()).context("Missing block id")?;
-        let parent_id = header.get("parentId").and_then(|v| v.as_str()).unwrap_or("");
+        let block_id = header.get("id").and_then(|v| v.as_str()).context("Missing block id")?.to_string();
+        let parent_id = header.get("parentId").and_then(|v| v.as_str()).unwrap_or("").to_string();
         let height = header.get("height").and_then(|v| v.as_i64()).context("Missing height")?;
         let timestamp = header.get("timestamp").and_then(|v| v.as_i64()).unwrap_or(0);
         let difficulty = header
@@ -90,52 +90,202 @@ impl BlockProcessor {
             .unwrap_or(0);
 
         self.global_block_index += 1;
+        let global_block_index = self.global_block_index;
 
-        // Insert block
-        self.db.execute(
-            "INSERT INTO blocks (
-                block_id, parent_id, height, timestamp, difficulty, block_size,
-                block_coins, tx_count, miner_address, miner_reward, main_chain, global_index
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
-            ON CONFLICT (block_id) DO UPDATE SET main_chain = TRUE",
-            params![
-                block_id,
-                parent_id,
+        // Collect all operations for this block
+        let mut collected = CollectedOps::new();
+
+        // Collect block data
+        collected.block = Some(BlockData {
+            block_id: block_id.clone(),
+            parent_id,
+            height,
+            timestamp,
+            difficulty,
+            block_size,
+            block_coins,
+            tx_count,
+            miner_address,
+            miner_reward,
+            global_index: global_block_index,
+        });
+
+        // Process transactions and collect operations
+        for (tx_idx, tx) in transactions.iter().enumerate() {
+            self.collect_transaction_ops(
+                tx,
+                &block_id,
                 height,
                 timestamp,
-                difficulty,
-                block_size,
-                block_coins,
-                tx_count,
-                miner_address,
-                miner_reward,
-                self.global_block_index
-            ],
-        )?;
-
-        // Process transactions
-        for (tx_idx, tx) in transactions.iter().enumerate() {
-            self.process_transaction(tx, block_id, height, timestamp, tx_idx as i32)
-                .await?;
+                tx_idx as i32,
+                &mut collected,
+            )?;
         }
 
-        // Update network stats periodically (every 100 blocks)
-        if height % 100 == 0 {
-            self.update_network_stats(height, timestamp, difficulty)?;
-        }
+        // Execute all operations in a single transaction
+        let update_stats = height % 100 == 0;
+        self.db.execute_transaction(|conn| {
+            // Insert block
+            if let Some(ref b) = collected.block {
+                conn.execute(
+                    "INSERT INTO blocks (
+                        block_id, parent_id, height, timestamp, difficulty, block_size,
+                        block_coins, tx_count, miner_address, miner_reward, main_chain, global_index
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
+                    ON CONFLICT (block_id) DO UPDATE SET main_chain = TRUE",
+                    params![
+                        b.block_id,
+                        b.parent_id,
+                        b.height,
+                        b.timestamp,
+                        b.difficulty,
+                        b.block_size,
+                        b.block_coins,
+                        b.tx_count,
+                        b.miner_address,
+                        b.miner_reward,
+                        b.global_index
+                    ],
+                )?;
+            }
+
+            // Insert all transactions
+            for tx in &collected.transactions {
+                conn.execute(
+                    "INSERT INTO transactions (
+                        tx_id, block_id, inclusion_height, timestamp, index_in_block,
+                        global_index, coinbase, size, input_count, output_count
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (tx_id) DO NOTHING",
+                    params![
+                        tx.tx_id,
+                        tx.block_id,
+                        tx.inclusion_height,
+                        tx.timestamp,
+                        tx.index_in_block,
+                        tx.global_index,
+                        tx.coinbase,
+                        tx.size,
+                        tx.input_count,
+                        tx.output_count
+                    ],
+                )?;
+            }
+
+            // Insert all boxes
+            for b in &collected.boxes {
+                conn.execute(
+                    "INSERT INTO boxes (
+                        box_id, tx_id, output_index, ergo_tree, ergo_tree_template_hash,
+                        address, value, creation_height, settlement_height, global_index,
+                        additional_registers
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT (box_id) DO NOTHING",
+                    params![
+                        b.box_id,
+                        b.tx_id,
+                        b.output_index,
+                        b.ergo_tree,
+                        b.template_hash,
+                        b.address,
+                        b.value,
+                        b.creation_height,
+                        b.settlement_height,
+                        b.global_index,
+                        b.registers_json
+                    ],
+                )?;
+            }
+
+            // Update spent boxes and insert inputs
+            for input in &collected.inputs {
+                conn.execute(
+                    "UPDATE boxes SET spent_tx_id = ?, spent_index = ?, spent_height = ? WHERE box_id = ?",
+                    params![input.tx_id, input.input_index, input.height, input.box_id],
+                )?;
+                conn.execute(
+                    "INSERT INTO inputs (id, tx_id, box_id, input_index, proof_bytes)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON CONFLICT DO NOTHING",
+                    params![input.id, input.tx_id, input.box_id, input.input_index, input.proof_bytes],
+                )?;
+            }
+
+            // Insert data inputs
+            for di in &collected.data_inputs {
+                conn.execute(
+                    "INSERT INTO data_inputs (id, tx_id, box_id, input_index)
+                     VALUES (?, ?, ?, ?)
+                     ON CONFLICT DO NOTHING",
+                    params![di.id, di.tx_id, di.box_id, di.input_index],
+                )?;
+            }
+
+            // Insert box assets
+            for asset in &collected.box_assets {
+                conn.execute(
+                    "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index)
+                     VALUES (?, ?, ?, ?, ?)
+                     ON CONFLICT DO NOTHING",
+                    params![asset.id, asset.box_id, asset.token_id, asset.amount, asset.asset_index],
+                )?;
+            }
+
+            // Insert tokens (new mints only)
+            for token in &collected.tokens {
+                conn.execute(
+                    "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
+                     VALUES (?, ?, ?, ?, ?, ?, ?)
+                     ON CONFLICT (token_id) DO NOTHING",
+                    params![
+                        token.token_id,
+                        token.box_id,
+                        token.emission_amount,
+                        token.name,
+                        token.description,
+                        token.decimals,
+                        token.creation_height
+                    ],
+                )?;
+            }
+
+            // Update address stats
+            let now = chrono::Utc::now().timestamp();
+            for addr in &collected.addresses {
+                conn.execute(
+                    "INSERT INTO address_stats (address, tx_count, first_seen_height, last_seen_height, updated_at)
+                     VALUES (?, 1, ?, ?, ?)
+                     ON CONFLICT (address) DO UPDATE SET
+                        tx_count = address_stats.tx_count + 1,
+                        last_seen_height = EXCLUDED.last_seen_height,
+                        updated_at = EXCLUDED.updated_at",
+                    params![addr.address, addr.height, addr.height, now],
+                )?;
+            }
+
+            // Update network stats periodically (every 100 blocks)
+            if update_stats {
+                if let Some(ref b) = collected.block {
+                    update_network_stats_sync(conn, b.height, b.timestamp, b.difficulty)?;
+                }
+            }
+
+            Ok(())
+        })?;
 
         Ok(())
     }
 
-    async fn process_transaction(
+    fn collect_transaction_ops(
         &mut self,
         tx: &Value,
         block_id: &str,
         height: i64,
         timestamp: i64,
         tx_idx: i32,
+        collected: &mut CollectedOps,
     ) -> Result<()> {
-        let tx_id = tx.get("id").and_then(|v| v.as_str()).context("Missing tx id")?;
+        let tx_id = tx.get("id").and_then(|v| v.as_str()).context("Missing tx id")?.to_string();
         let inputs = tx.get("inputs").and_then(|v| v.as_array());
         let outputs = tx.get("outputs").and_then(|v| v.as_array()).context("Missing outputs")?;
         let data_inputs = tx.get("dataInputs").and_then(|v| v.as_array());
@@ -145,8 +295,7 @@ impl BlockProcessor {
         let output_count = outputs.len() as i32;
         let coinbase = input_count == 0 || tx_idx == 0;
 
-        // Get first input's box_id - this is used to identify minting transactions
-        // Token ID == first input box_id means this tx mints that token
+        // Get first input's box_id for minting detection
         let first_input_box_id = inputs
             .and_then(|i| i.first())
             .and_then(|inp| inp.get("boxId"))
@@ -155,50 +304,49 @@ impl BlockProcessor {
 
         self.global_tx_index += 1;
 
-        // Insert transaction
-        self.db.execute(
-            "INSERT INTO transactions (
-                tx_id, block_id, inclusion_height, timestamp, index_in_block,
-                global_index, coinbase, size, input_count, output_count
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (tx_id) DO NOTHING",
-            params![
-                tx_id,
-                block_id,
-                height,
-                timestamp,
-                tx_idx,
-                self.global_tx_index,
-                coinbase,
-                size,
-                input_count,
-                output_count
-            ],
-        )?;
+        collected.transactions.push(TransactionData {
+            tx_id: tx_id.clone(),
+            block_id: block_id.to_string(),
+            inclusion_height: height,
+            timestamp,
+            index_in_block: tx_idx,
+            global_index: self.global_tx_index,
+            coinbase,
+            size,
+            input_count,
+            output_count,
+        });
 
-        // Process inputs (mark boxes as spent)
+        // Collect inputs
         if let Some(inputs) = inputs {
             for (input_idx, input) in inputs.iter().enumerate() {
-                self.process_input(input, tx_id, height, input_idx as i32)?;
+                self.collect_input(input, &tx_id, height, input_idx as i32, collected)?;
             }
         }
 
-        // Process data inputs
+        // Collect data inputs
         if let Some(data_inputs) = data_inputs {
             for (di_idx, data_input) in data_inputs.iter().enumerate() {
-                self.process_data_input(data_input, tx_id, di_idx as i32)?;
+                self.collect_data_input(data_input, &tx_id, di_idx as i32, collected)?;
             }
         }
 
-        // Process outputs (create boxes)
+        // Collect outputs
         for (output_idx, output) in outputs.iter().enumerate() {
-            self.process_output(output, tx_id, height, output_idx as i32, first_input_box_id.as_deref())?;
+            self.collect_output(output, &tx_id, height, output_idx as i32, first_input_box_id.as_deref(), collected)?;
         }
 
         Ok(())
     }
 
-    fn process_input(&mut self, input: &Value, tx_id: &str, height: i64, input_idx: i32) -> Result<()> {
+    fn collect_input(
+        &mut self,
+        input: &Value,
+        tx_id: &str,
+        height: i64,
+        input_idx: i32,
+        collected: &mut CollectedOps,
+    ) -> Result<()> {
         let box_id = input.get("boxId").and_then(|v| v.as_str()).context("Missing boxId")?;
         let proof_bytes = input
             .get("spendingProof")
@@ -206,45 +354,49 @@ impl BlockProcessor {
             .and_then(|v| v.as_str())
             .unwrap_or("");
 
-        // Mark box as spent
-        self.db.execute(
-            "UPDATE boxes SET spent_tx_id = ?, spent_index = ?, spent_height = ? WHERE box_id = ?",
-            params![tx_id, input_idx, height, box_id],
-        )?;
-
-        // Record input
         self.input_id += 1;
-        self.db.execute(
-            "INSERT INTO inputs (id, tx_id, box_id, input_index, proof_bytes)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT DO NOTHING",
-            params![self.input_id, tx_id, box_id, input_idx, proof_bytes],
-        )?;
+
+        collected.inputs.push(InputData {
+            id: self.input_id,
+            tx_id: tx_id.to_string(),
+            box_id: box_id.to_string(),
+            height,
+            input_index: input_idx,
+            proof_bytes: proof_bytes.to_string(),
+        });
 
         Ok(())
     }
 
-    fn process_data_input(&mut self, data_input: &Value, tx_id: &str, input_idx: i32) -> Result<()> {
+    fn collect_data_input(
+        &mut self,
+        data_input: &Value,
+        tx_id: &str,
+        input_idx: i32,
+        collected: &mut CollectedOps,
+    ) -> Result<()> {
         let box_id = data_input.get("boxId").and_then(|v| v.as_str()).context("Missing boxId")?;
 
         self.data_input_id += 1;
-        self.db.execute(
-            "INSERT INTO data_inputs (id, tx_id, box_id, input_index)
-             VALUES (?, ?, ?, ?)
-             ON CONFLICT DO NOTHING",
-            params![self.data_input_id, tx_id, box_id, input_idx],
-        )?;
+
+        collected.data_inputs.push(DataInputData {
+            id: self.data_input_id,
+            tx_id: tx_id.to_string(),
+            box_id: box_id.to_string(),
+            input_index: input_idx,
+        });
 
         Ok(())
     }
 
-    fn process_output(
+    fn collect_output(
         &mut self,
         output: &Value,
         tx_id: &str,
         height: i64,
         output_idx: i32,
         first_input_box_id: Option<&str>,
+        collected: &mut CollectedOps,
     ) -> Result<()> {
         let box_id = output.get("boxId").and_then(|v| v.as_str()).context("Missing boxId")?;
         let value = output.get("value").and_then(|v| v.as_i64()).unwrap_or(0);
@@ -253,58 +405,52 @@ impl BlockProcessor {
         let additional_registers = output.get("additionalRegisters");
         let assets = output.get("assets").and_then(|v| v.as_array());
 
-        // Derive address from ergo_tree
         let address = ergo_tree::ergo_tree_to_address(ergo_tree_hex).unwrap_or_else(|| ergo_tree_hex.to_string());
-        let template_hash = ergo_tree::ergo_tree_template_hash(ergo_tree_hex);
+        let template_hash = Some(ergo_tree::ergo_tree_template_hash(ergo_tree_hex));
 
         self.global_box_index += 1;
 
         let registers_json = additional_registers.map(|r| r.to_string());
 
-        // Insert box
-        self.db.execute(
-            "INSERT INTO boxes (
-                box_id, tx_id, output_index, ergo_tree, ergo_tree_template_hash,
-                address, value, creation_height, settlement_height, global_index,
-                additional_registers
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (box_id) DO NOTHING",
-            params![
-                box_id,
-                tx_id,
-                output_idx,
-                ergo_tree_hex,
-                template_hash,
-                address,
-                value,
-                creation_height,
-                height,
-                self.global_box_index,
-                registers_json
-            ],
-        )?;
+        collected.boxes.push(BoxData {
+            box_id: box_id.to_string(),
+            tx_id: tx_id.to_string(),
+            output_index: output_idx,
+            ergo_tree: ergo_tree_hex.to_string(),
+            template_hash,
+            address: address.clone(),
+            value,
+            creation_height,
+            settlement_height: height,
+            global_index: self.global_box_index,
+            registers_json,
+        });
 
-        // Process assets (tokens)
+        // Collect address for stats update
+        collected.addresses.push(AddressData {
+            address,
+            height,
+        });
+
+        // Collect assets
         if let Some(assets) = assets {
             for (asset_idx, asset) in assets.iter().enumerate() {
-                self.process_asset(
+                self.collect_asset(
                     asset,
                     box_id,
                     height,
                     asset_idx as i32,
                     first_input_box_id,
                     additional_registers,
+                    collected,
                 )?;
             }
         }
 
-        // Update address stats
-        self.update_address_stats(&address, height)?;
-
         Ok(())
     }
 
-    fn process_asset(
+    fn collect_asset(
         &mut self,
         asset: &Value,
         box_id: &str,
@@ -312,122 +458,183 @@ impl BlockProcessor {
         asset_idx: i32,
         first_input_box_id: Option<&str>,
         registers: Option<&Value>,
+        collected: &mut CollectedOps,
     ) -> Result<()> {
         let token_id = asset.get("tokenId").and_then(|v| v.as_str()).context("Missing tokenId")?;
         let amount = asset.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
 
         self.box_asset_id += 1;
 
-        // Insert box asset
-        self.db.execute(
-            "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index)
-             VALUES (?, ?, ?, ?, ?)
-             ON CONFLICT DO NOTHING",
-            params![self.box_asset_id, box_id, token_id, amount, asset_idx],
-        )?;
+        collected.box_assets.push(BoxAssetData {
+            id: self.box_asset_id,
+            box_id: box_id.to_string(),
+            token_id: token_id.to_string(),
+            amount,
+            asset_index: asset_idx,
+        });
 
-        // Check if this is a minting transaction (token_id == first input's box_id)
-        // Only the first asset in the output can be a newly minted token
+        // Check if this is a minting transaction
         if asset_idx == 0 {
             let is_minting = first_input_box_id.map(|id| id == token_id).unwrap_or(false);
-            self.try_register_token(token_id, box_id, amount, height, is_minting, registers)?;
+            if is_minting {
+                let (name, description, decimals) = extract_token_metadata(registers);
+                collected.tokens.push(TokenData {
+                    token_id: token_id.to_string(),
+                    box_id: box_id.to_string(),
+                    emission_amount: amount,
+                    name,
+                    description,
+                    decimals,
+                    creation_height: height,
+                });
+            }
         }
-
-        Ok(())
-    }
-
-    fn try_register_token(
-        &self,
-        token_id: &str,
-        box_id: &str,
-        amount: i64,
-        height: i64,
-        is_minting: bool,
-        registers: Option<&Value>,
-    ) -> Result<()> {
-        // Check if token already exists
-        let exists: Option<i32> = self.db.query_one(
-            "SELECT 1 FROM tokens WHERE token_id = ?",
-            [token_id],
-            |row| row.get(0),
-        )?;
-
-        if exists.is_none() {
-            // Extract metadata from registers if this is a minting transaction
-            let (name, description, decimals) = if is_minting {
-                extract_token_metadata(registers)
-            } else {
-                (None, None, None)
-            };
-
-            self.db.execute(
-                "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
-                 VALUES (?, ?, ?, ?, ?, ?, ?)
-                 ON CONFLICT (token_id) DO NOTHING",
-                params![token_id, box_id, amount, name, description, decimals, height],
-            )?;
-        }
-
-        Ok(())
-    }
-
-    fn update_address_stats(&self, address: &str, height: i64) -> Result<()> {
-        let now = chrono::Utc::now().timestamp();
-
-        self.db.execute(
-            "INSERT INTO address_stats (address, tx_count, first_seen_height, last_seen_height, updated_at)
-             VALUES (?, 1, ?, ?, ?)
-             ON CONFLICT (address) DO UPDATE SET
-                tx_count = address_stats.tx_count + 1,
-                last_seen_height = EXCLUDED.last_seen_height,
-                updated_at = EXCLUDED.updated_at",
-            params![address, height, height, now],
-        )?;
-
-        Ok(())
-    }
-
-    fn update_network_stats(&self, height: i64, timestamp: i64, difficulty: i64) -> Result<()> {
-        // Calculate basic network stats
-        let total_coins: i64 = self.db.query_one(
-            "SELECT COALESCE(SUM(value), 0) FROM boxes WHERE spent_tx_id IS NULL",
-            [],
-            |row| row.get(0),
-        )?.unwrap_or(0);
-
-        let block_size: i64 = self.db.query_one(
-            "SELECT COALESCE(block_size, 0) FROM blocks WHERE height = ?",
-            [height],
-            |row| row.get(0),
-        )?.unwrap_or(0);
-
-        let block_coins: i64 = self.db.query_one(
-            "SELECT COALESCE(block_coins, 0) FROM blocks WHERE height = ?",
-            [height],
-            |row| row.get(0),
-        )?.unwrap_or(0);
-
-        // Simple hashrate estimate (difficulty / 120 seconds target)
-        let hashrate = difficulty as f64 / 120.0;
-
-        self.db.execute(
-            "INSERT INTO network_stats (
-                timestamp, height, difficulty, block_size, block_coins, total_coins, hashrate
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
-            ON CONFLICT (timestamp) DO UPDATE SET
-                height = EXCLUDED.height, difficulty = EXCLUDED.difficulty, hashrate = EXCLUDED.hashrate",
-            params![timestamp, height, difficulty, block_size, block_coins, total_coins, hashrate],
-        )?;
 
         Ok(())
     }
 }
 
+// Helper function to update network stats within a transaction
+fn update_network_stats_sync(conn: &Connection, height: i64, timestamp: i64, difficulty: i64) -> Result<()> {
+    // Use a simpler calculation that doesn't require full table scan
+    // Just get the block's values directly
+    let block_info: Option<(i64, i64)> = conn
+        .query_row(
+            "SELECT COALESCE(block_size, 0), COALESCE(block_coins, 0) FROM blocks WHERE height = ?",
+            [height],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .ok();
+
+    let (block_size, block_coins) = block_info.unwrap_or((0, 0));
+
+    // Estimate total coins from recent blocks rather than full scan
+    let estimated_supply = height * 75_000_000_000i64; // ~75 ERG average reward per block
+
+    // Simple hashrate estimate
+    let hashrate = difficulty as f64 / 120.0;
+
+    conn.execute(
+        "INSERT INTO network_stats (
+            timestamp, height, difficulty, block_size, block_coins, total_coins, hashrate
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (timestamp) DO UPDATE SET
+            height = EXCLUDED.height, difficulty = EXCLUDED.difficulty, hashrate = EXCLUDED.hashrate",
+        params![timestamp, height, difficulty, block_size, block_coins, estimated_supply, hashrate],
+    )?;
+
+    Ok(())
+}
+
+// Data structures for collecting batch operations
+
+struct CollectedOps {
+    block: Option<BlockData>,
+    transactions: Vec<TransactionData>,
+    boxes: Vec<BoxData>,
+    inputs: Vec<InputData>,
+    data_inputs: Vec<DataInputData>,
+    box_assets: Vec<BoxAssetData>,
+    tokens: Vec<TokenData>,
+    addresses: Vec<AddressData>,
+}
+
+impl CollectedOps {
+    fn new() -> Self {
+        Self {
+            block: None,
+            transactions: Vec::with_capacity(16),
+            boxes: Vec::with_capacity(64),
+            inputs: Vec::with_capacity(64),
+            data_inputs: Vec::with_capacity(8),
+            box_assets: Vec::with_capacity(32),
+            tokens: Vec::new(),
+            addresses: Vec::with_capacity(64),
+        }
+    }
+}
+
+struct BlockData {
+    block_id: String,
+    parent_id: String,
+    height: i64,
+    timestamp: i64,
+    difficulty: i64,
+    block_size: i32,
+    block_coins: i64,
+    tx_count: i32,
+    miner_address: Option<String>,
+    miner_reward: i64,
+    global_index: i64,
+}
+
+struct TransactionData {
+    tx_id: String,
+    block_id: String,
+    inclusion_height: i64,
+    timestamp: i64,
+    index_in_block: i32,
+    global_index: i64,
+    coinbase: bool,
+    size: i32,
+    input_count: i32,
+    output_count: i32,
+}
+
+struct BoxData {
+    box_id: String,
+    tx_id: String,
+    output_index: i32,
+    ergo_tree: String,
+    template_hash: Option<String>,
+    address: String,
+    value: i64,
+    creation_height: i64,
+    settlement_height: i64,
+    global_index: i64,
+    registers_json: Option<String>,
+}
+
+struct InputData {
+    id: i64,
+    tx_id: String,
+    box_id: String,
+    height: i64,
+    input_index: i32,
+    proof_bytes: String,
+}
+
+struct DataInputData {
+    id: i64,
+    tx_id: String,
+    box_id: String,
+    input_index: i32,
+}
+
+struct BoxAssetData {
+    id: i64,
+    box_id: String,
+    token_id: String,
+    amount: i64,
+    asset_index: i32,
+}
+
+struct TokenData {
+    token_id: String,
+    box_id: String,
+    emission_amount: i64,
+    name: Option<String>,
+    description: Option<String>,
+    decimals: Option<i32>,
+    creation_height: i64,
+}
+
+struct AddressData {
+    address: String,
+    height: i64,
+}
+
 /// Extract token metadata from box registers
-/// In Ergo, token metadata is encoded in:
-/// - R4: Token name (Coll[Byte])
-/// - R5: Token description (Coll[Byte])
-/// - R6: Token decimals (Coll[Byte] containing ASCII digits, or Int)
 fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<String>, Option<i32>) {
     let registers = match registers {
         Some(r) => r,
@@ -453,7 +660,6 @@ fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<
 }
 
 /// Decode a Sigma-encoded Coll[Byte] (type 0e) to a UTF-8 string
-/// Format: 0e + VLQ length + bytes
 fn decode_sigma_string(hex: &str) -> Option<String> {
     let bytes = hex::decode(hex).ok()?;
 
@@ -461,9 +667,7 @@ fn decode_sigma_string(hex: &str) -> Option<String> {
         return None;
     }
 
-    // Check for Coll[Byte] type (0x0e)
     if bytes[0] == 0x0e {
-        // VLQ decode the length
         let (len, offset) = decode_vlq(&bytes[1..])?;
         if offset + 1 + len > bytes.len() {
             return None;
@@ -472,7 +676,6 @@ fn decode_sigma_string(hex: &str) -> Option<String> {
         return String::from_utf8(string_bytes.to_vec()).ok();
     }
 
-    // Some tokens use raw UTF-8 without type prefix (non-standard but common)
     String::from_utf8(bytes).ok()
 }
 
@@ -485,7 +688,6 @@ fn decode_sigma_int(hex: &str) -> Option<i32> {
     }
 
     match bytes[0] {
-        // Coll[Byte] - parse as decimal string
         0x0e => {
             let (len, offset) = decode_vlq(&bytes[1..])?;
             if offset + 1 + len > bytes.len() {
@@ -495,18 +697,10 @@ fn decode_sigma_int(hex: &str) -> Option<i32> {
             let s = String::from_utf8(string_bytes.to_vec()).ok()?;
             s.trim().parse().ok()
         }
-        // SInt (type 0x04) - ZigZag encoded
-        0x04 => {
-            let (value, _) = decode_vlq(&bytes[1..])?;
-            // ZigZag decode
-            Some(((value >> 1) as i32) ^ -((value & 1) as i32))
-        }
-        // SLong (type 0x05) - ZigZag encoded
-        0x05 => {
+        0x04 | 0x05 => {
             let (value, _) = decode_vlq(&bytes[1..])?;
             Some(((value >> 1) as i32) ^ -((value & 1) as i32))
         }
-        // Try parsing as raw decimal string (non-standard)
         _ => {
             let s = String::from_utf8(bytes).ok()?;
             s.trim().parse().ok()
@@ -514,8 +708,7 @@ fn decode_sigma_int(hex: &str) -> Option<i32> {
     }
 }
 
-/// Decode a VLQ (Variable Length Quantity) encoded integer
-/// Returns (value, bytes_consumed)
+/// Decode a VLQ encoded integer
 fn decode_vlq(bytes: &[u8]) -> Option<(usize, usize)> {
     let mut value: usize = 0;
     let mut shift = 0;
@@ -527,7 +720,6 @@ fn decode_vlq(bytes: &[u8]) -> Option<(usize, usize)> {
         }
         shift += 7;
         if shift > 35 {
-            // Overflow protection
             return None;
         }
     }

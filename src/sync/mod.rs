@@ -4,13 +4,17 @@ mod node_client;
 mod processor;
 
 use anyhow::Result;
+use futures::stream::{self, StreamExt};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::{Mutex, RwLock};
+use tokio::sync::{Mutex, RwLock, Semaphore};
 
 use crate::db::Database;
 pub use node_client::NodeClient;
 use processor::BlockProcessor;
+
+/// Maximum concurrent HTTP requests to nodes
+const MAX_CONCURRENT_FETCHES: usize = 10;
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,7 +160,7 @@ impl SyncService {
             // Process blocks sequentially (must maintain order)
             let mut processor = self.processor.lock().await;
             for block in blocks {
-                processor.process_block(&block).await?;
+                processor.process_block(&block)?;
             }
             drop(processor);
 
@@ -226,29 +230,55 @@ impl SyncService {
         let heights: Vec<i64> = (start_height..=end_height).collect();
         let num_nodes = self.nodes.len();
 
-        // Distribute heights across nodes
-        let mut futures = Vec::new();
+        // Use a semaphore to limit concurrent requests
+        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_FETCHES));
 
-        for (i, height) in heights.iter().enumerate() {
-            let node_idx = i % num_nodes;
-            let node = &self.nodes[node_idx];
-            let height = *height;
+        // Create tasks with concurrency control
+        let tasks: Vec<_> = heights
+            .iter()
+            .enumerate()
+            .map(|(i, &height)| {
+                let node_idx = i % num_nodes;
+                let node = self.nodes[node_idx].clone();
+                let sem = semaphore.clone();
 
-            futures.push(async move {
-                // Get block header IDs at this height
-                let header_ids = node.get_block_ids_at_height(height).await?;
-                if header_ids.is_empty() {
-                    anyhow::bail!("No block at height {}", height);
+                async move {
+                    // Acquire semaphore permit before making request
+                    let _permit = sem.acquire().await.map_err(|e| anyhow::anyhow!("Semaphore error: {}", e))?;
+
+                    // Retry logic for transient failures
+                    let mut last_error = None;
+                    for attempt in 0..3 {
+                        if attempt > 0 {
+                            tokio::time::sleep(tokio::time::Duration::from_millis(500 * (1 << attempt))).await;
+                        }
+
+                        match async {
+                            let header_ids = node.get_block_ids_at_height(height).await?;
+                            if header_ids.is_empty() {
+                                anyhow::bail!("No block at height {}", height);
+                            }
+                            node.get_block(&header_ids[0]).await
+                        }.await {
+                            Ok(block) => return Ok::<(i64, serde_json::Value), anyhow::Error>((height, block)),
+                            Err(e) => {
+                                last_error = Some(e);
+                                continue;
+                            }
+                        }
+                    }
+
+                    Err(last_error.unwrap_or_else(|| anyhow::anyhow!("Unknown fetch error")))
                 }
+            })
+            .collect();
 
-                // Get full block
-                let block = node.get_block(&header_ids[0]).await?;
-                Ok::<(i64, serde_json::Value), anyhow::Error>((height, block))
-            });
-        }
-
-        // Execute all fetches in parallel
-        let results = futures::future::join_all(futures).await;
+        // Execute with controlled concurrency using buffered stream
+        let results: Vec<Result<(i64, serde_json::Value), anyhow::Error>> =
+            stream::iter(tasks)
+                .buffer_unordered(MAX_CONCURRENT_FETCHES)
+                .collect()
+                .await;
 
         // Collect and sort by height
         let mut blocks: Vec<(i64, serde_json::Value)> = Vec::new();

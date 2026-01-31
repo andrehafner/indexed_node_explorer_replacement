@@ -299,7 +299,7 @@ async fn find_address(
                 [address],
                 |row| row.get(0),
             )
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
             .unwrap_or(0);
 
         return Ok(Some(AddressInfo {
@@ -333,7 +333,7 @@ async fn find_address(
                 [address],
                 |row| row.get(0),
             )
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
             .unwrap_or(0);
 
         return Ok(Some(AddressInfo {

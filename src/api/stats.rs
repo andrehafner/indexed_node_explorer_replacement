@@ -178,7 +178,7 @@ pub async fn get_epochs(
                     ))
                 },
             )
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
         if let Some((start_ts, end_ts, block_count)) = timestamps {
             items.push(Epoch {
