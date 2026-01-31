@@ -205,7 +205,7 @@ pub async fn stream_unspent_by_epochs(
     let mut result = Vec::new();
     for output in items {
         let box_with_assets = enrich_box_with_assets(&state, output)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         result.push(box_with_assets);
     }
 
@@ -331,7 +331,7 @@ async fn get_boxes_with_filter(
     let mut items = Vec::new();
     for output in boxes {
         let enriched = enrich_box_with_assets(state, output)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         items.push(enriched);
     }
 
@@ -379,7 +379,7 @@ async fn get_boxes_by_token_id(
     let mut items = Vec::new();
     for output in boxes {
         let enriched = enrich_box_with_assets(state, output)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         items.push(enriched);
     }
 
@@ -423,7 +423,7 @@ async fn stream_boxes(
     let mut result = Vec::new();
     for output in boxes {
         let enriched = enrich_box_with_assets(state, output)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         result.push(enriched);
     }
 
@@ -491,7 +491,7 @@ async fn search_boxes_impl(
     let mut items = Vec::new();
     for output in boxes {
         let enriched = enrich_box_with_assets(state, output)
-            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
         items.push(enriched);
     }
 
