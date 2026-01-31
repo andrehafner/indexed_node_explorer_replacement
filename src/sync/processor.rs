@@ -125,76 +125,109 @@ impl BlockProcessor {
         // Execute all operations in a single transaction
         let update_stats = height % 100 == 0;
         self.db.execute_transaction(|conn| {
-            // Insert block
+            // Insert block (check first to avoid ON CONFLICT FK issues)
             if let Some(ref b) = collected.block {
-                conn.execute(
-                    "INSERT INTO blocks (
-                        block_id, parent_id, height, timestamp, difficulty, block_size,
-                        block_coins, tx_count, miner_address, miner_reward, main_chain, global_index
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)
-                    ON CONFLICT (block_id) DO UPDATE SET main_chain = TRUE",
-                    params![
-                        b.block_id,
-                        b.parent_id,
-                        b.height,
-                        b.timestamp,
-                        b.difficulty,
-                        b.block_size,
-                        b.block_coins,
-                        b.tx_count,
-                        b.miner_address,
-                        b.miner_reward,
-                        b.global_index
-                    ],
-                )?;
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM blocks WHERE block_id = ?",
+                        [&b.block_id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if exists {
+                    conn.execute(
+                        "UPDATE blocks SET main_chain = TRUE WHERE block_id = ?",
+                        [&b.block_id],
+                    )?;
+                } else {
+                    conn.execute(
+                        "INSERT INTO blocks (
+                            block_id, parent_id, height, timestamp, difficulty, block_size,
+                            block_coins, tx_count, miner_address, miner_reward, main_chain, global_index
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, TRUE, ?)",
+                        params![
+                            b.block_id,
+                            b.parent_id,
+                            b.height,
+                            b.timestamp,
+                            b.difficulty,
+                            b.block_size,
+                            b.block_coins,
+                            b.tx_count,
+                            b.miner_address,
+                            b.miner_reward,
+                            b.global_index
+                        ],
+                    )?;
+                }
             }
 
-            // Insert all transactions
+            // Insert all transactions (skip if already exists)
             for tx in &collected.transactions {
-                conn.execute(
-                    "INSERT INTO transactions (
-                        tx_id, block_id, inclusion_height, timestamp, index_in_block,
-                        global_index, coinbase, size, input_count, output_count
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (tx_id) DO NOTHING",
-                    params![
-                        tx.tx_id,
-                        tx.block_id,
-                        tx.inclusion_height,
-                        tx.timestamp,
-                        tx.index_in_block,
-                        tx.global_index,
-                        tx.coinbase,
-                        tx.size,
-                        tx.input_count,
-                        tx.output_count
-                    ],
-                )?;
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM transactions WHERE tx_id = ?",
+                        [&tx.tx_id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO transactions (
+                            tx_id, block_id, inclusion_height, timestamp, index_in_block,
+                            global_index, coinbase, size, input_count, output_count
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        params![
+                            tx.tx_id,
+                            tx.block_id,
+                            tx.inclusion_height,
+                            tx.timestamp,
+                            tx.index_in_block,
+                            tx.global_index,
+                            tx.coinbase,
+                            tx.size,
+                            tx.input_count,
+                            tx.output_count
+                        ],
+                    )?;
+                }
             }
 
-            // Insert all boxes
+            // Insert all boxes (skip if already exists to avoid FK issues)
             for b in &collected.boxes {
-                conn.execute(
-                    "INSERT INTO boxes (
-                        box_id, tx_id, output_index, ergo_tree, ergo_tree_template_hash,
-                        address, value, creation_height, settlement_height, global_index,
-                        additional_registers
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT (box_id) DO NOTHING",
-                    params![
-                        b.box_id,
-                        b.tx_id,
-                        b.output_index,
-                        b.ergo_tree,
-                        b.template_hash,
-                        b.address,
-                        b.value,
-                        b.creation_height,
-                        b.settlement_height,
-                        b.global_index,
-                        b.registers_json
-                    ],
-                )?;
+                // Check if box already exists to avoid ON CONFLICT FK issues in DuckDB
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM boxes WHERE box_id = ?",
+                        [&b.box_id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO boxes (
+                            box_id, tx_id, output_index, ergo_tree, ergo_tree_template_hash,
+                            address, value, creation_height, settlement_height, global_index,
+                            additional_registers
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                        params![
+                            b.box_id,
+                            b.tx_id,
+                            b.output_index,
+                            b.ergo_tree,
+                            b.template_hash,
+                            b.address,
+                            b.value,
+                            b.creation_height,
+                            b.settlement_height,
+                            b.global_index,
+                            b.registers_json
+                        ],
+                    )?;
+                }
             }
 
             // Update spent boxes and insert inputs
@@ -203,50 +236,87 @@ impl BlockProcessor {
                     "UPDATE boxes SET spent_tx_id = ?, spent_index = ?, spent_height = ? WHERE box_id = ?",
                     params![input.tx_id, input.input_index, input.height, input.box_id],
                 )?;
-                conn.execute(
-                    "INSERT INTO inputs (id, tx_id, box_id, input_index, proof_bytes)
-                     VALUES (?, ?, ?, ?, ?)
-                     ON CONFLICT DO NOTHING",
-                    params![input.id, input.tx_id, input.box_id, input.input_index, input.proof_bytes],
-                )?;
+
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM inputs WHERE id = ?",
+                        [input.id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO inputs (id, tx_id, box_id, input_index, proof_bytes)
+                         VALUES (?, ?, ?, ?, ?)",
+                        params![input.id, input.tx_id, input.box_id, input.input_index, input.proof_bytes],
+                    )?;
+                }
             }
 
             // Insert data inputs
             for di in &collected.data_inputs {
-                conn.execute(
-                    "INSERT INTO data_inputs (id, tx_id, box_id, input_index)
-                     VALUES (?, ?, ?, ?)
-                     ON CONFLICT DO NOTHING",
-                    params![di.id, di.tx_id, di.box_id, di.input_index],
-                )?;
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM data_inputs WHERE id = ?",
+                        [di.id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO data_inputs (id, tx_id, box_id, input_index)
+                         VALUES (?, ?, ?, ?)",
+                        params![di.id, di.tx_id, di.box_id, di.input_index],
+                    )?;
+                }
             }
 
-            // Insert box assets
+            // Insert box assets (skip if already exists)
             for asset in &collected.box_assets {
-                conn.execute(
-                    "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index)
-                     VALUES (?, ?, ?, ?, ?)
-                     ON CONFLICT DO NOTHING",
-                    params![asset.id, asset.box_id, asset.token_id, asset.amount, asset.asset_index],
-                )?;
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM box_assets WHERE id = ?",
+                        [asset.id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index)
+                         VALUES (?, ?, ?, ?, ?)",
+                        params![asset.id, asset.box_id, asset.token_id, asset.amount, asset.asset_index],
+                    )?;
+                }
             }
 
-            // Insert tokens (new mints only)
+            // Insert tokens (new mints only, skip if already exists)
             for token in &collected.tokens {
-                conn.execute(
-                    "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
-                     VALUES (?, ?, ?, ?, ?, ?, ?)
-                     ON CONFLICT (token_id) DO NOTHING",
-                    params![
-                        token.token_id,
-                        token.box_id,
-                        token.emission_amount,
-                        token.name,
-                        token.description,
-                        token.decimals,
-                        token.creation_height
-                    ],
-                )?;
+                let exists: bool = conn
+                    .query_row(
+                        "SELECT 1 FROM tokens WHERE token_id = ?",
+                        [&token.token_id],
+                        |_| Ok(true),
+                    )
+                    .unwrap_or(false);
+
+                if !exists {
+                    conn.execute(
+                        "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
+                         VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        params![
+                            token.token_id,
+                            token.box_id,
+                            token.emission_amount,
+                            token.name,
+                            token.description,
+                            token.decimals,
+                            token.creation_height
+                        ],
+                    )?;
+                }
             }
 
             // Update address stats
