@@ -115,17 +115,31 @@ pub struct UnlockRequest {
 pub async fn unlock(
     State(state): State<Arc<AppState>>,
     Json(req): Json<UnlockRequest>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
+    tracing::info!("Wallet unlock request received");
+
     let node = state
         .sync_service
         .get_primary_node()
-        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "No node available".to_string()))?;
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "success": false,
+            "error": "No node available"
+        }))))?;
 
-    node.wallet_unlock(&req.pass)
-        .await
-        .map_err(|e| (StatusCode::BAD_REQUEST, e.to_string()))?;
-
-    Ok(Json(serde_json::json!({ "success": true })))
+    match node.wallet_unlock(&req.pass).await {
+        Ok(()) => {
+            tracing::info!("Wallet unlock succeeded");
+            Ok(Json(serde_json::json!({ "success": true })))
+        }
+        Err(e) => {
+            let error_msg = e.to_string();
+            tracing::error!("Wallet unlock error: {}", error_msg);
+            Err((StatusCode::BAD_REQUEST, Json(serde_json::json!({
+                "success": false,
+                "error": error_msg
+            }))))
+        }
+    }
 }
 
 /// POST /api/v1/wallet/lock - Lock wallet

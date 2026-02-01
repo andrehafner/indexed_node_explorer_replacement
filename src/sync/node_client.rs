@@ -327,19 +327,25 @@ impl NodeClient {
     }
 
     pub async fn wallet_unlock(&self, password: &str) -> Result<()> {
+        let url = format!("{}/wallet/unlock", self.url);
+        tracing::info!("Attempting wallet unlock at: {}", url);
+
         let resp = self
             .client
-            .post(format!("{}/wallet/unlock", self.url))
+            .post(&url)
             .header("api_key", self.api_key.as_deref().unwrap_or(""))
-            .header("Content-Type", "application/json")
             .json(&serde_json::json!({ "pass": password }))
             .send()
             .await?;
 
-        if resp.status() != StatusCode::OK {
-            anyhow::bail!("Failed to unlock wallet: {}", resp.status());
+        let status = resp.status();
+        if status != StatusCode::OK {
+            let error_body = resp.text().await.unwrap_or_default();
+            tracing::error!("Wallet unlock failed: {} - {}", status, error_body);
+            anyhow::bail!("Failed to unlock wallet: {} - {}", status, error_body);
         }
 
+        tracing::info!("Wallet unlocked successfully");
         Ok(())
     }
 
