@@ -145,17 +145,22 @@ pub async fn unlock(
 /// POST /api/v1/wallet/lock - Lock wallet
 pub async fn lock(
     State(state): State<Arc<AppState>>,
-) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+) -> Result<Json<serde_json::Value>, (StatusCode, Json<serde_json::Value>)> {
     let node = state
         .sync_service
         .get_primary_node()
-        .ok_or((StatusCode::SERVICE_UNAVAILABLE, "No node available".to_string()))?;
+        .ok_or((StatusCode::SERVICE_UNAVAILABLE, Json(serde_json::json!({
+            "success": false,
+            "error": "No node available"
+        }))))?;
 
-    node.wallet_lock()
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
-
-    Ok(Json(serde_json::json!({ "success": true })))
+    match node.wallet_lock().await {
+        Ok(()) => Ok(Json(serde_json::json!({ "success": true }))),
+        Err(e) => Err((StatusCode::INTERNAL_SERVER_ERROR, Json(serde_json::json!({
+            "success": false,
+            "error": e.to_string()
+        }))))
+    }
 }
 
 /// POST /api/v1/wallet/transaction/generate - Generate unsigned transaction
