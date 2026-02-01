@@ -410,9 +410,17 @@ async function loadStatusData() {
     // Sync status
     const progress = (status.sync.syncProgress * 100).toFixed(2);
     document.getElementById('sync-progress').style.width = `${progress}%`;
-    document.getElementById('sync-text').textContent = status.sync.isSyncing
-        ? `Syncing... ${progress}%`
-        : `Synced (${progress}%)`;
+    document.getElementById('sync-percentage').textContent = `${progress}%`;
+
+    const syncBadge = document.getElementById('sync-status-badge');
+    if (status.sync.isSyncing) {
+        syncBadge.textContent = 'Syncing';
+        syncBadge.classList.remove('synced');
+    } else {
+        syncBadge.textContent = 'Synced';
+        syncBadge.classList.add('synced');
+    }
+
     document.getElementById('local-height').textContent = formatNumber(status.sync.localHeight);
     document.getElementById('node-height').textContent = formatNumber(status.sync.nodeHeight);
     document.getElementById('blocks-per-sec').textContent = status.sync.blocksPerSecond?.toFixed(2) || '-';
@@ -422,7 +430,12 @@ async function loadStatusData() {
 
     // Primary Node Info (first connected node)
     const primaryNode = status.sync.connectedNodes.find(n => n.connected) || status.sync.connectedNodes[0];
-    if (primaryNode) {
+    const nodeBadge = document.getElementById('node-status-badge');
+
+    if (primaryNode && primaryNode.connected) {
+        nodeBadge.textContent = 'Connected';
+        nodeBadge.classList.remove('offline');
+
         document.getElementById('node-version').textContent = primaryNode.appVersion || '-';
         document.getElementById('node-state-type').textContent = primaryNode.stateType || '-';
         document.getElementById('node-headers-height').textContent = primaryNode.headersHeight
@@ -439,7 +452,14 @@ async function loadStatusData() {
         document.getElementById('node-difficulty').textContent = primaryNode.difficulty
             ? formatLargeDifficulty(primaryNode.difficulty)
             : '-';
+    } else {
+        nodeBadge.textContent = 'Offline';
+        nodeBadge.classList.add('offline');
     }
+
+    // Connected nodes count
+    const connectedCount = status.sync.connectedNodes.filter(n => n.connected).length;
+    document.getElementById('connected-node-count').textContent = connectedCount;
 
     // Nodes list
     const nodeList = document.getElementById('node-list');
@@ -489,46 +509,55 @@ function formatLargeDifficulty(diffStr) {
 async function loadWalletData() {
     const status = await fetchApi('/wallet/status');
 
-    const statusDot = document.querySelector('.wallet-status .status-dot');
+    const statusIndicator = document.querySelector('.wallet-status .status-indicator');
     const statusText = document.querySelector('.wallet-status .status-text');
     const lockedSection = document.getElementById('wallet-locked');
+    const helpCard = document.getElementById('wallet-help');
 
     if (!status || status.error) {
-        statusDot.classList.remove('connected');
-        statusDot.classList.add('disconnected');
+        statusIndicator.classList.remove('connected');
+        statusIndicator.classList.add('disconnected');
 
         // Check for common errors
         let errorMsg = status?.error || 'Node unavailable';
-        let helpText = '';
+        let helpTitle = 'Connection Error';
 
         if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('api_key')) {
             errorMsg = 'API Key Required';
-            helpText = 'Set NODE_API_KEY in docker-compose to match your Ergo node API key.';
+            helpTitle = 'Authentication Required';
         } else if (errorMsg.includes('timeout') || errorMsg.includes('connect')) {
             errorMsg = 'Node Unavailable';
-            helpText = 'Cannot connect to the Ergo node. Make sure it is running.';
         }
 
         statusText.textContent = errorMsg;
 
-        // Show help text in the locked section
+        // Show the locked section with error styling
         lockedSection.innerHTML = `
-            <div style="text-align:center;color:var(--text-secondary)">
-                <p style="font-size:1.1rem;margin-bottom:0.5rem">${errorMsg}</p>
-                ${helpText ? `<p style="font-size:0.875rem">${helpText}</p>` : ''}
+            <div class="wallet-locked-content">
+                <div class="lock-icon" style="background: rgba(239, 68, 68, 0.15);">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent-error);">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="15" y1="9" x2="9" y2="15"></line>
+                        <line x1="9" y1="9" x2="15" y2="15"></line>
+                    </svg>
+                </div>
+                <h3>${helpTitle}</h3>
+                <p class="unlock-description">${errorMsg}</p>
             </div>
         `;
         lockedSection.classList.remove('hidden');
         document.getElementById('wallet-unlocked').classList.add('hidden');
+        helpCard.classList.remove('hidden');
         return;
     }
 
     if (status.unlocked) {
-        statusDot.classList.add('connected');
-        statusDot.classList.remove('disconnected');
+        statusIndicator.classList.add('connected');
+        statusIndicator.classList.remove('disconnected');
         statusText.textContent = 'Unlocked';
         lockedSection.classList.add('hidden');
         document.getElementById('wallet-unlocked').classList.remove('hidden');
+        helpCard.classList.add('hidden');
 
         // Load balances
         const balances = await fetchApi('/wallet/balances');
@@ -537,27 +566,45 @@ async function loadWalletData() {
                 `${nanoErgToErg(balances.balance)} ERG`;
 
             // Display wallet tokens
-            renderWalletTokens(balances.assets || []);
+            const assets = balances.assets || [];
+            renderWalletTokens(assets);
+            document.getElementById('token-count').textContent = assets.length;
         }
 
         // Load addresses
         const addresses = await fetchApi('/wallet/addresses');
         if (addresses) {
+            document.getElementById('address-count').textContent = addresses.length;
             const list = document.getElementById('wallet-address-list');
             list.innerHTML = addresses.map(addr =>
-                `<div class="address-item" onclick="showAddressDetail('${addr}')" style="cursor:pointer">${addr}</div>`
+                `<div class="address-item" onclick="showAddressDetail('${addr}')">${addr}</div>`
             ).join('');
         }
     } else {
-        statusDot.classList.remove('connected', 'disconnected');
+        statusIndicator.classList.remove('connected', 'disconnected');
         statusText.textContent = status.initialized ? 'Locked' : 'Not initialized';
 
         // Restore the unlock form HTML
         lockedSection.innerHTML = `
-            <div class="unlock-form">
-                <h3>Unlock Wallet</h3>
-                <input type="password" id="wallet-password" placeholder="Enter wallet password">
-                <button id="unlock-btn" class="btn btn-primary">Unlock</button>
+            <div class="wallet-locked-content">
+                <div class="lock-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                        <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                    </svg>
+                </div>
+                <h3>Unlock Your Wallet</h3>
+                <p class="unlock-description">Enter your wallet password to access your funds and manage transactions.</p>
+                <div class="unlock-form">
+                    <input type="password" id="wallet-password" placeholder="Wallet password">
+                    <button id="unlock-btn" class="btn btn-primary btn-large">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                        </svg>
+                        Unlock Wallet
+                    </button>
+                </div>
             </div>
         `;
         // Re-attach event listener
@@ -565,6 +612,7 @@ async function loadWalletData() {
 
         lockedSection.classList.remove('hidden');
         document.getElementById('wallet-unlocked').classList.add('hidden');
+        helpCard.classList.remove('hidden');
     }
 }
 
@@ -1174,12 +1222,10 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Close modal on background click
-    document.querySelectorAll('.modal').forEach(modal => {
-        modal.addEventListener('click', (e) => {
-            if (e.target === modal) {
-                modal.classList.add('hidden');
-            }
+    // Close modal on backdrop click
+    document.querySelectorAll('.modal-backdrop').forEach(backdrop => {
+        backdrop.addEventListener('click', () => {
+            backdrop.closest('.modal').classList.add('hidden');
         });
     });
 
