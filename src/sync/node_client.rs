@@ -327,13 +327,13 @@ impl NodeClient {
     }
 
     pub async fn wallet_unlock(&self, password: &str) -> Result<()> {
-        // Ergo node expects password as plain text body
+        // Ergo node expects password as a JSON-encoded string (with quotes)
         let resp = self
             .client
             .post(format!("{}/wallet/unlock", self.url))
             .header("api_key", self.api_key.as_deref().unwrap_or(""))
-            .header("Content-Type", "text/plain")
-            .body(password.to_string())
+            .header("Content-Type", "application/json")
+            .body(format!("\"{}\"", password))
             .send()
             .await?;
 
