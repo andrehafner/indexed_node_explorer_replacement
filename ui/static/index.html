@@ -3,62 +3,156 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Ergo Index Explorer</title>
+    <title>Ergo Index - Blockchain Explorer & Indexer</title>
     <link rel="stylesheet" href="/styles.css">
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>⛓️</text></svg>">
+    <link rel="icon" type="image/svg+xml" href="https://raw.githubusercontent.com/ergoplatform/awesome-ergo/master/graphics/Logo/symbol_bold__1080px__orange.svg">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
 </head>
 <body>
+    <!-- Navigation -->
     <nav class="navbar">
-        <div class="nav-brand">
-            <span class="logo">⛓️</span>
-            <span class="brand-text">Ergo Index</span>
-        </div>
-        <div class="nav-links">
-            <a href="#" class="nav-link active" data-page="explorer">Explorer</a>
-            <a href="#" class="nav-link" data-page="tokens">Tokens</a>
-            <a href="#" class="nav-link" data-page="wallet">Wallet</a>
-            <a href="#" class="nav-link" data-page="status">Status</a>
-            <a href="/docs" class="nav-link" target="_blank">API Docs</a>
-        </div>
-        <div class="nav-search">
-            <input type="text" id="searchInput" placeholder="Search by block, tx, address, token...">
-            <button id="searchBtn">🔍</button>
+        <div class="nav-container">
+            <a href="#" class="nav-brand" data-page="explorer">
+                <img src="https://raw.githubusercontent.com/ergoplatform/awesome-ergo/master/graphics/Logo/symbol_bold__1080px__orange.svg" alt="Ergo" class="logo-icon">
+                <span class="brand-text">Ergo Index</span>
+            </a>
+            <div class="nav-links">
+                <a href="#" class="nav-link active" data-page="explorer">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <rect x="3" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="3" width="7" height="7"></rect>
+                        <rect x="14" y="14" width="7" height="7"></rect>
+                        <rect x="3" y="14" width="7" height="7"></rect>
+                    </svg>
+                    <span>Explorer</span>
+                </a>
+                <a href="#" class="nav-link" data-page="tokens">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M12 6v6l4 2"></path>
+                    </svg>
+                    <span>Tokens</span>
+                </a>
+                <a href="#" class="nav-link" data-page="wallet">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M21 4H3a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h18a2 2 0 0 0 2-2V6a2 2 0 0 0-2-2Z"></path>
+                        <circle cx="16" cy="12" r="2"></circle>
+                    </svg>
+                    <span>Wallet</span>
+                </a>
+                <a href="#" class="nav-link" data-page="status">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M22 12h-4l-3 9L9 3l-3 9H2"></path>
+                    </svg>
+                    <span>Status</span>
+                </a>
+                <a href="/docs" class="nav-link" target="_blank">
+                    <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+                        <polyline points="14,2 14,8 20,8"></polyline>
+                        <line x1="16" y1="13" x2="8" y2="13"></line>
+                        <line x1="16" y1="17" x2="8" y2="17"></line>
+                    </svg>
+                    <span>API</span>
+                </a>
+            </div>
+            <div class="nav-search">
+                <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="11" cy="11" r="8"></circle>
+                    <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+                </svg>
+                <input type="text" id="searchInput" placeholder="Search blocks, transactions, addresses, tokens...">
+                <button id="searchBtn" class="search-btn">Search</button>
+            </div>
         </div>
     </nav>
 
-    <main class="container">
+    <main class="main-content">
         <!-- Explorer Page -->
         <div id="explorer-page" class="page active">
-            <div class="stats-grid">
+            <div class="page-header">
+                <h1>Blockchain Explorer</h1>
+                <p class="page-subtitle">Real-time Ergo blockchain data indexed and searchable</p>
+            </div>
+
+            <div class="stats-row">
                 <div class="stat-card">
-                    <div class="stat-label">Blocks</div>
-                    <div class="stat-value" id="stat-blocks">-</div>
+                    <div class="stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+                            <line x1="3" y1="9" x2="21" y2="9"></line>
+                            <line x1="9" y1="21" x2="9" y2="9"></line>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value" id="stat-blocks">-</div>
+                        <div class="stat-label">Blocks</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Transactions</div>
-                    <div class="stat-value" id="stat-txs">-</div>
+                    <div class="stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <polyline points="22,12 18,12 15,21 9,3 6,12 2,12"></polyline>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value" id="stat-txs">-</div>
+                        <div class="stat-label">Transactions</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Addresses</div>
-                    <div class="stat-value" id="stat-addresses">-</div>
+                    <div class="stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                            <circle cx="9" cy="7" r="4"></circle>
+                            <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                            <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value" id="stat-addresses">-</div>
+                        <div class="stat-label">Addresses</div>
+                    </div>
                 </div>
                 <div class="stat-card">
-                    <div class="stat-label">Tokens</div>
-                    <div class="stat-value" id="stat-tokens">-</div>
+                    <div class="stat-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <circle cx="12" cy="12" r="10"></circle>
+                            <polygon points="16.24,7.76 14.12,14.12 7.76,16.24 9.88,9.88 16.24,7.76"></polygon>
+                        </svg>
+                    </div>
+                    <div class="stat-content">
+                        <div class="stat-value" id="stat-tokens">-</div>
+                        <div class="stat-label">Tokens</div>
+                    </div>
                 </div>
             </div>
 
             <div class="content-grid">
                 <div class="panel">
-                    <h2>Latest Blocks</h2>
+                    <div class="panel-header">
+                        <h2>Latest Blocks</h2>
+                        <span class="panel-badge">Live</span>
+                    </div>
                     <div id="latest-blocks" class="list-container">
-                        <div class="loading">Loading...</div>
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <span>Loading blocks...</span>
+                        </div>
                     </div>
                 </div>
                 <div class="panel">
-                    <h2>Latest Transactions</h2>
+                    <div class="panel-header">
+                        <h2>Latest Transactions</h2>
+                        <span class="panel-badge">Live</span>
+                    </div>
                     <div id="latest-txs" class="list-container">
-                        <div class="loading">Loading...</div>
+                        <div class="loading-state">
+                            <div class="spinner"></div>
+                            <span>Loading transactions...</span>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -66,194 +160,300 @@
 
         <!-- Tokens Page -->
         <div id="tokens-page" class="page">
-            <div class="tokens-header">
-                <h2>Token Explorer</h2>
-                <div class="tokens-filters">
-                    <button class="filter-btn active" data-filter="all">All</button>
+            <div class="page-header">
+                <h1>Token Explorer</h1>
+                <p class="page-subtitle">Browse all tokens and NFTs on the Ergo blockchain</p>
+            </div>
+            <div class="tokens-toolbar">
+                <div class="filter-group">
+                    <button class="filter-btn active" data-filter="all">All Tokens</button>
                     <button class="filter-btn" data-filter="fungible">Fungible</button>
                     <button class="filter-btn nft" data-filter="nft">NFTs</button>
                 </div>
             </div>
             <div id="tokens-list">
-                <div class="loading">Loading tokens...</div>
+                <div class="loading-state">
+                    <div class="spinner"></div>
+                    <span>Loading tokens...</span>
+                </div>
             </div>
         </div>
 
         <!-- Wallet Page -->
         <div id="wallet-page" class="page">
-            <div class="wallet-header">
-                <h2>Node Wallet</h2>
+            <div class="page-header">
+                <div class="page-header-main">
+                    <h1>Node Wallet</h1>
+                    <p class="page-subtitle">Manage your Ergo node wallet</p>
+                </div>
                 <div class="wallet-status" id="wallet-status">
-                    <span class="status-dot"></span>
+                    <span class="status-indicator"></span>
                     <span class="status-text">Checking...</span>
                 </div>
             </div>
 
             <div id="wallet-locked" class="wallet-section">
-                <div class="unlock-form">
-                    <h3>Unlock Wallet</h3>
-                    <input type="password" id="wallet-password" placeholder="Enter wallet password">
-                    <button id="unlock-btn" class="btn btn-primary">Unlock</button>
+                <div class="wallet-locked-content">
+                    <div class="lock-icon">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                    </div>
+                    <h3>Unlock Your Wallet</h3>
+                    <p class="unlock-description">Enter your wallet password to access your funds and manage transactions.</p>
+                    <div class="unlock-form">
+                        <input type="password" id="wallet-password" placeholder="Wallet password">
+                        <button id="unlock-btn" class="btn btn-primary btn-large">
+                            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                                <path d="M7 11V7a5 5 0 0 1 9.9-1"></path>
+                            </svg>
+                            Unlock Wallet
+                        </button>
+                    </div>
                 </div>
             </div>
 
             <div id="wallet-unlocked" class="wallet-section hidden">
-                <div class="wallet-grid">
-                    <div class="wallet-panel wallet-panel-main">
-                        <div class="wallet-balance-hero">
-                            <div class="balance-label">Total Balance</div>
-                            <div class="balance-amount-large" id="wallet-balance">0 ERG</div>
+                <div class="wallet-overview">
+                    <div class="balance-card">
+                        <div class="balance-header">
+                            <span class="balance-label">Total Balance</span>
+                            <span class="balance-network">Mainnet</span>
                         </div>
-
-                        <div class="wallet-addresses-section">
-                            <h3>Wallet Addresses</h3>
-                            <div id="wallet-address-list" class="address-list"></div>
-                        </div>
-                    </div>
-
-                    <div class="wallet-panel">
-                        <h3>Token Holdings</h3>
-                        <div id="wallet-tokens" class="wallet-tokens-list">
-                            <div class="loading">Loading tokens...</div>
+                        <div class="balance-amount" id="wallet-balance">0.00 ERG</div>
+                        <div class="balance-footer">
+                            <span class="balance-usd" id="wallet-balance-usd"></span>
                         </div>
                     </div>
                 </div>
 
-                <div class="wallet-panel wallet-panel-full">
-                    <h3>Send Transaction</h3>
-                    <div class="send-form-row">
-                        <input type="text" id="send-to" placeholder="Recipient address" class="input-wide">
-                        <input type="number" id="send-amount" placeholder="Amount (ERG)" class="input-amount">
-                        <button id="send-btn" class="btn btn-primary">Send</button>
+                <div class="wallet-grid">
+                    <div class="wallet-panel">
+                        <div class="panel-header">
+                            <h3>Wallet Addresses</h3>
+                            <span class="address-count" id="address-count">0</span>
+                        </div>
+                        <div id="wallet-address-list" class="address-list"></div>
+                    </div>
+
+                    <div class="wallet-panel">
+                        <div class="panel-header">
+                            <h3>Token Holdings</h3>
+                            <span class="token-count" id="token-count">0</span>
+                        </div>
+                        <div id="wallet-tokens" class="wallet-tokens-list">
+                            <div class="empty-state">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                                </svg>
+                                <span>No tokens found</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="wallet-panel send-panel">
+                    <div class="panel-header">
+                        <h3>Send ERG</h3>
+                    </div>
+                    <div class="send-form">
+                        <div class="form-group">
+                            <label for="send-to">Recipient Address</label>
+                            <input type="text" id="send-to" placeholder="9f...">
+                        </div>
+                        <div class="form-row">
+                            <div class="form-group">
+                                <label for="send-amount">Amount (ERG)</label>
+                                <input type="number" id="send-amount" placeholder="0.00" step="0.001" min="0">
+                            </div>
+                            <button id="send-btn" class="btn btn-primary btn-large">
+                                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                    <line x1="22" y1="2" x2="11" y2="13"></line>
+                                    <polygon points="22,2 15,22 11,13 2,9 22,2"></polygon>
+                                </svg>
+                                Send
+                            </button>
+                        </div>
                     </div>
                 </div>
 
                 <div class="wallet-actions">
-                    <button id="lock-btn" class="btn btn-secondary">Lock Wallet</button>
+                    <button id="lock-btn" class="btn btn-secondary">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                        </svg>
+                        Lock Wallet
+                    </button>
+                </div>
+            </div>
+
+            <div id="wallet-help" class="help-card">
+                <div class="help-icon">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"></path>
+                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
+                    </svg>
+                </div>
+                <div class="help-content">
+                    <h4>Wallet Configuration</h4>
+                    <p>To use the wallet features, you need to configure your Ergo node API key:</p>
+                    <ol>
+                        <li>Find your API key in your node's <code>ergo.conf</code> file under <code>scorex.restApi.apiKeyHash</code></li>
+                        <li>Add the <strong>unhashed</strong> API key (not the hash) to your <code>docker-compose.yml</code>:</li>
+                    </ol>
+                    <pre><code>environment:
+  - NODE_API_KEY=your_api_key_here</code></pre>
+                    <p class="help-note">The API key is the plain text password, not the hash shown in your node config.</p>
                 </div>
             </div>
         </div>
 
         <!-- Status Page -->
         <div id="status-page" class="page">
-            <h2>System Status</h2>
+            <div class="page-header">
+                <h1>System Status</h1>
+                <p class="page-subtitle">Monitor indexer performance and node connectivity</p>
+            </div>
 
-            <div class="status-grid">
-                <div class="status-panel">
-                    <h3>Sync Status</h3>
+            <div class="status-overview">
+                <div class="sync-card">
+                    <div class="sync-header">
+                        <div class="sync-title">
+                            <h3>Sync Progress</h3>
+                            <span class="sync-status-badge" id="sync-status-badge">Syncing</span>
+                        </div>
+                        <div class="sync-percentage" id="sync-percentage">0%</div>
+                    </div>
                     <div class="sync-progress">
-                        <div class="progress-bar">
+                        <div class="progress-track">
                             <div class="progress-fill" id="sync-progress"></div>
                         </div>
-                        <div class="progress-text" id="sync-text">Loading...</div>
                     </div>
                     <div class="sync-details">
-                        <div class="sync-item">
-                            <span class="label">Indexed Height:</span>
-                            <span class="value" id="local-height">-</span>
+                        <div class="sync-stat">
+                            <span class="sync-stat-label">Indexed</span>
+                            <span class="sync-stat-value" id="local-height">-</span>
                         </div>
-                        <div class="sync-item">
-                            <span class="label">Node Height:</span>
-                            <span class="value" id="node-height">-</span>
+                        <div class="sync-stat">
+                            <span class="sync-stat-label">Network</span>
+                            <span class="sync-stat-value" id="node-height">-</span>
                         </div>
-                        <div class="sync-item">
-                            <span class="label">Blocks/sec:</span>
-                            <span class="value" id="blocks-per-sec">-</span>
+                        <div class="sync-stat">
+                            <span class="sync-stat-label">Speed</span>
+                            <span class="sync-stat-value"><span id="blocks-per-sec">-</span> blk/s</span>
                         </div>
-                        <div class="sync-item">
-                            <span class="label">ETA:</span>
-                            <span class="value" id="sync-eta">-</span>
+                        <div class="sync-stat">
+                            <span class="sync-stat-label">ETA</span>
+                            <span class="sync-stat-value" id="sync-eta">-</span>
                         </div>
                     </div>
                 </div>
+            </div>
 
-                <div class="status-panel status-panel-wide">
-                    <h3>Primary Node Info</h3>
-                    <div class="node-info-grid" id="primary-node-info">
-                        <div class="node-info-item">
-                            <span class="label">Node Version:</span>
-                            <span class="value" id="node-version">-</span>
+            <div class="status-grid">
+                <div class="status-panel node-info-panel">
+                    <div class="panel-header">
+                        <h3>Primary Node</h3>
+                        <span class="node-status-badge" id="node-status-badge">Connected</span>
+                    </div>
+                    <div class="node-info-grid">
+                        <div class="info-item">
+                            <span class="info-label">Version</span>
+                            <span class="info-value" id="node-version">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">State Type:</span>
-                            <span class="value" id="node-state-type">-</span>
+                        <div class="info-item">
+                            <span class="info-label">State Type</span>
+                            <span class="info-value" id="node-state-type">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Headers Height:</span>
-                            <span class="value" id="node-headers-height">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Headers</span>
+                            <span class="info-value" id="node-headers-height">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Max Peer Height:</span>
-                            <span class="value" id="node-max-peer-height">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Peers Max</span>
+                            <span class="info-value" id="node-max-peer-height">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Connected Peers:</span>
-                            <span class="value" id="node-peers">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Peers</span>
+                            <span class="info-value" id="node-peers">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Mempool Size:</span>
-                            <span class="value" id="node-mempool">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Mempool</span>
+                            <span class="info-value" id="node-mempool">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Mining:</span>
-                            <span class="value" id="node-mining">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Mining</span>
+                            <span class="info-value" id="node-mining">-</span>
                         </div>
-                        <div class="node-info-item">
-                            <span class="label">Difficulty:</span>
-                            <span class="value" id="node-difficulty">-</span>
+                        <div class="info-item">
+                            <span class="info-label">Difficulty</span>
+                            <span class="info-value" id="node-difficulty">-</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="status-panel">
-                    <h3>Connected Nodes</h3>
+                    <div class="panel-header">
+                        <h3>Connected Nodes</h3>
+                        <span class="node-count" id="connected-node-count">0</span>
+                    </div>
                     <div id="node-list" class="node-list"></div>
                 </div>
 
                 <div class="status-panel">
-                    <h3>Indexed Database</h3>
+                    <div class="panel-header">
+                        <h3>Indexed Database</h3>
+                    </div>
                     <div class="db-stats">
-                        <div class="db-item">
-                            <span class="label">Blocks:</span>
-                            <span class="value" id="db-blocks">-</span>
+                        <div class="db-stat">
+                            <span class="db-stat-value" id="db-blocks">-</span>
+                            <span class="db-stat-label">Blocks</span>
                         </div>
-                        <div class="db-item">
-                            <span class="label">Transactions:</span>
-                            <span class="value" id="db-txs">-</span>
+                        <div class="db-stat">
+                            <span class="db-stat-value" id="db-txs">-</span>
+                            <span class="db-stat-label">Transactions</span>
                         </div>
-                        <div class="db-item">
-                            <span class="label">Boxes:</span>
-                            <span class="value" id="db-boxes">-</span>
+                        <div class="db-stat">
+                            <span class="db-stat-value" id="db-boxes">-</span>
+                            <span class="db-stat-label">UTXOs</span>
                         </div>
-                        <div class="db-item">
-                            <span class="label">Tokens:</span>
-                            <span class="value" id="db-tokens">-</span>
+                        <div class="db-stat">
+                            <span class="db-stat-value" id="db-tokens">-</span>
+                            <span class="db-stat-label">Tokens</span>
                         </div>
-                        <div class="db-item">
-                            <span class="label">DB Size:</span>
-                            <span class="value" id="db-size">-</span>
+                        <div class="db-stat">
+                            <span class="db-stat-value" id="db-size">-</span>
+                            <span class="db-stat-label">DB Size</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="status-panel">
-                    <h3>Indexer</h3>
-                    <div class="sys-stats">
-                        <div class="sys-item">
-                            <span class="label">Indexer Version:</span>
-                            <span class="value" id="sys-version">-</span>
+                    <div class="panel-header">
+                        <h3>Indexer Info</h3>
+                    </div>
+                    <div class="indexer-info">
+                        <div class="info-row">
+                            <span class="info-label">Version</span>
+                            <span class="info-value" id="sys-version">-</span>
                         </div>
-                        <div class="sys-item">
-                            <span class="label">Network:</span>
-                            <span class="value" id="sys-network">-</span>
+                        <div class="info-row">
+                            <span class="info-label">Network</span>
+                            <span class="info-value" id="sys-network">-</span>
                         </div>
-                        <div class="sys-item">
-                            <span class="label">Uptime:</span>
-                            <span class="value" id="sys-uptime">-</span>
+                        <div class="info-row">
+                            <span class="info-label">Uptime</span>
+                            <span class="info-value" id="sys-uptime">-</span>
                         </div>
-                        <div class="sys-item">
-                            <span class="label">Memory:</span>
-                            <span class="value" id="sys-memory">-</span>
+                        <div class="info-row">
+                            <span class="info-label">Memory</span>
+                            <span class="info-value" id="sys-memory">-</span>
                         </div>
                     </div>
                 </div>
@@ -262,6 +462,7 @@
 
         <!-- Search Results Modal -->
         <div id="search-modal" class="modal hidden">
+            <div class="modal-backdrop"></div>
             <div class="modal-content">
                 <div class="modal-header">
                     <h3>Search Results</h3>
@@ -273,6 +474,7 @@
 
         <!-- Detail Modal -->
         <div id="detail-modal" class="modal hidden">
+            <div class="modal-backdrop"></div>
             <div class="modal-content modal-large">
                 <div class="modal-header">
                     <h3 id="detail-title">Details</h3>
@@ -284,7 +486,17 @@
     </main>
 
     <footer class="footer">
-        <p>Ergo Index v<span id="version">0.1.0</span> | <a href="/docs">API Documentation</a> | <a href="https://github.com/andrehafner/indexed_node_explorer_replacement" target="_blank">GitHub</a></p>
+        <div class="footer-content">
+            <div class="footer-brand">
+                <img src="https://raw.githubusercontent.com/ergoplatform/awesome-ergo/master/graphics/Logo/symbol_bold__1080px__orange.svg" alt="Ergo" class="footer-logo">
+                <span>Ergo Index v<span id="version">0.1.0</span></span>
+            </div>
+            <div class="footer-links">
+                <a href="/docs">API Documentation</a>
+                <a href="https://ergoplatform.org" target="_blank">Ergo Platform</a>
+                <a href="https://github.com/andrehafner/indexed_node_explorer_replacement" target="_blank">GitHub</a>
+            </div>
+        </div>
     </footer>
 
     <script src="/app.js"></script>
