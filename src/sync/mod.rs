@@ -36,8 +36,17 @@ pub struct NodeStatus {
     pub url: String,
     pub connected: bool,
     pub height: Option<i64>,
+    pub headers_height: Option<i64>,
     pub latency_ms: Option<u64>,
     pub last_used: Option<i64>,
+    // Extended node info
+    pub app_version: Option<String>,
+    pub state_type: Option<String>,
+    pub is_mining: Option<bool>,
+    pub peers_count: Option<i32>,
+    pub unconfirmed_count: Option<i32>,
+    pub difficulty: Option<String>,
+    pub max_peer_height: Option<i64>,
 }
 
 pub struct SyncService {
@@ -74,8 +83,16 @@ impl SyncService {
                 url: url.clone(),
                 connected: false,
                 height: None,
+                headers_height: None,
                 latency_ms: None,
                 last_used: None,
+                app_version: None,
+                state_type: None,
+                is_mining: None,
+                peers_count: None,
+                unconfirmed_count: None,
+                difficulty: None,
+                max_peer_height: None,
             })
             .collect();
 
@@ -198,8 +215,17 @@ impl SyncService {
 
                     statuses[idx].connected = true;
                     statuses[idx].height = Some(height);
+                    statuses[idx].headers_height = info.headers_height;
                     statuses[idx].latency_ms = Some(latency);
                     statuses[idx].last_used = Some(chrono::Utc::now().timestamp());
+                    // Extended info
+                    statuses[idx].app_version = info.app_version.clone();
+                    statuses[idx].state_type = info.state_type.clone();
+                    statuses[idx].is_mining = info.is_mining;
+                    statuses[idx].peers_count = info.peers_count;
+                    statuses[idx].unconfirmed_count = info.unconfirmed_count;
+                    statuses[idx].difficulty = info.difficulty.map(|d| d.to_string());
+                    statuses[idx].max_peer_height = info.max_peer_height;
 
                     if height > best_height {
                         best_height = height;
@@ -210,7 +236,15 @@ impl SyncService {
                     tracing::warn!("Node {} unreachable: {}", node.url, e);
                     statuses[idx].connected = false;
                     statuses[idx].height = None;
+                    statuses[idx].headers_height = None;
                     statuses[idx].latency_ms = None;
+                    statuses[idx].app_version = None;
+                    statuses[idx].state_type = None;
+                    statuses[idx].is_mining = None;
+                    statuses[idx].peers_count = None;
+                    statuses[idx].unconfirmed_count = None;
+                    statuses[idx].difficulty = None;
+                    statuses[idx].max_peer_height = None;
                 }
             }
         }
