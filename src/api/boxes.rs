@@ -59,7 +59,7 @@ pub async fn get_box(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Boxes by address", body = PaginatedResponse<Output>)
+        (status = 200, description = "Boxes by address", body = PaginatedOutputs)
     )
 )]
 pub async fn get_boxes_by_address(
@@ -81,7 +81,7 @@ pub async fn get_boxes_by_address(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Unspent boxes by address", body = PaginatedResponse<Output>)
+        (status = 200, description = "Unspent boxes by address", body = PaginatedOutputs)
     )
 )]
 pub async fn get_unspent_boxes_by_address(

@@ -6,7 +6,7 @@ use axum::{
 use duckdb::params;
 use std::sync::Arc;
 
-use crate::models::{ApiInfo, Epoch, NetworkStats, PaginatedResponse, Pagination};
+use crate::models::{ApiInfo, Epoch, NetworkStats, PaginatedResponse, Pagination, TableSize};
 use crate::AppState;
 
 /// GET /api/v1/info - Get API info
@@ -242,4 +242,56 @@ pub async fn get_epoch(
         timestamp_end: timestamps.1,
         block_count: timestamps.2 as i32,
     }))
+}
+
+/// GET /api/v1/stats/tables - Get table sizes
+#[utoipa::path(
+    get,
+    path = "/stats/tables",
+    tag = "stats",
+    responses(
+        (status = 200, description = "Table sizes", body = Vec<TableSize>)
+    )
+)]
+pub async fn get_table_sizes(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<Vec<TableSize>>, (StatusCode, String)> {
+    // Query DuckDB for table storage info
+    let tables = state
+        .db
+        .query_all(
+            "SELECT table_name, estimated_size, column_count
+             FROM duckdb_tables()
+             WHERE database_name = 'main' AND schema_name = 'main'
+             ORDER BY estimated_size DESC",
+            [],
+            |row| {
+                let name: String = row.get(0)?;
+                let size: i64 = row.get(1)?;
+                Ok((name, size))
+            },
+        )
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Get row counts for each table
+    let mut result = Vec::new();
+    for (name, size) in tables {
+        let row_count = state
+            .db
+            .query_one(
+                &format!("SELECT COUNT(*) FROM \"{}\"", name),
+                [],
+                |row| row.get::<_, i64>(0),
+            )
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+            .unwrap_or(0);
+
+        result.push(TableSize {
+            name,
+            row_count,
+            size_bytes: size,
+        });
+    }
+
+    Ok(Json(result))
 }

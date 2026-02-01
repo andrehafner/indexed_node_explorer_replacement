@@ -80,6 +80,7 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         // Stats
         .route("/stats", get(stats::get_stats))
         .route("/stats/network", get(stats::get_network_stats))
+        .route("/stats/tables", get(stats::get_table_sizes))
         // Epochs
         .route("/epochs", get(stats::get_epochs))
         .route("/epochs/:epochIndex", get(stats::get_epoch))

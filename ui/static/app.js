@@ -240,8 +240,8 @@ async function postApi(endpoint, data) {
     }
 }
 
-// Page navigation
-function navigateTo(page) {
+// Page navigation with URL hash persistence
+function navigateTo(page, updateHash = true) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
 
@@ -251,11 +251,23 @@ function navigateTo(page) {
     if (pageEl) pageEl.classList.add('active');
     if (linkEl) linkEl.classList.add('active');
 
+    // Update URL hash for persistence
+    if (updateHash) {
+        window.location.hash = page;
+    }
+
     // Load page data
     if (page === 'explorer') loadExplorerData();
     if (page === 'status') loadStatusData();
     if (page === 'wallet') loadWalletData();
     if (page === 'tokens') loadTokensData();
+}
+
+// Get page from URL hash
+function getPageFromHash() {
+    const hash = window.location.hash.slice(1); // Remove #
+    const validPages = ['explorer', 'tokens', 'wallet', 'status', 'api'];
+    return validPages.includes(hash) ? hash : 'explorer';
 }
 
 // Explorer page
@@ -459,21 +471,60 @@ async function loadStatusData() {
 
     // Connected nodes count
     const connectedCount = status.sync.connectedNodes.filter(n => n.connected).length;
-    document.getElementById('connected-node-count').textContent = connectedCount;
+    document.getElementById('connected-node-count').textContent = `${connectedCount}/${status.sync.connectedNodes.length}`;
 
-    // Nodes list
+    // Nodes list - detailed card for each node
     const nodeList = document.getElementById('node-list');
-    nodeList.innerHTML = status.sync.connectedNodes.map(node => `
-        <div class="node-item">
-            <div class="node-url-info">
-                <span class="node-url">${node.url}</span>
-                ${node.appVersion ? `<span class="node-version-tag">${node.appVersion}</span>` : ''}
+    nodeList.innerHTML = status.sync.connectedNodes.map((node, idx) => `
+        <div class="node-card ${node.connected ? 'connected' : 'disconnected'}">
+            <div class="node-card-header">
+                <div class="node-card-title">
+                    <span class="status-dot ${node.connected ? 'connected' : 'disconnected'}"></span>
+                    <span class="node-url">${node.url}</span>
+                    ${idx === 0 ? '<span class="primary-badge">Primary</span>' : ''}
+                </div>
+                <span class="node-status-tag ${node.connected ? 'online' : 'offline'}">${node.connected ? 'Online' : 'Offline'}</span>
             </div>
-            <div class="node-status">
-                <span class="node-height-info">${node.height ? formatNumber(node.height) : '-'}</span>
-                <span class="node-latency">${node.latencyMs ? node.latencyMs + 'ms' : '-'}</span>
-                <span class="status-dot ${node.connected ? 'connected' : 'disconnected'}"></span>
+            <div class="node-card-grid">
+                <div class="node-info-item">
+                    <span class="node-info-label">Version</span>
+                    <span class="node-info-value">${node.appVersion || '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">State</span>
+                    <span class="node-info-value">${node.stateType || '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Height</span>
+                    <span class="node-info-value">${node.height ? formatNumber(node.height) : '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Headers</span>
+                    <span class="node-info-value">${node.headersHeight ? formatNumber(node.headersHeight) : '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Peers</span>
+                    <span class="node-info-value">${node.peersCount ?? '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Mempool</span>
+                    <span class="node-info-value">${node.unconfirmedCount ?? '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Latency</span>
+                    <span class="node-info-value">${node.latencyMs ? node.latencyMs + 'ms' : '-'}</span>
+                </div>
+                <div class="node-info-item">
+                    <span class="node-info-label">Mining</span>
+                    <span class="node-info-value">${node.isMining !== null && node.isMining !== undefined ? (node.isMining ? 'Yes' : 'No') : '-'}</span>
+                </div>
             </div>
+            ${node.difficulty ? `
+            <div class="node-card-footer">
+                <span class="node-info-label">Difficulty:</span>
+                <span class="node-info-value">${formatLargeDifficulty(node.difficulty)}</span>
+            </div>
+            ` : ''}
         </div>
     `).join('');
 
@@ -484,6 +535,9 @@ async function loadStatusData() {
     document.getElementById('db-tokens').textContent = formatNumber(status.database.tokenCount);
     document.getElementById('db-size').textContent = formatBytes(status.database.sizeBytes);
 
+    // Load table sizes
+    loadTableSizes();
+
     // System
     document.getElementById('sys-version').textContent = status.system.version;
     document.getElementById('sys-network').textContent = status.system.network;
@@ -491,6 +545,27 @@ async function loadStatusData() {
     document.getElementById('sys-memory').textContent = status.system.memoryUsageMb
         ? `${status.system.memoryUsageMb} MB`
         : '-';
+}
+
+// Load table sizes from API
+async function loadTableSizes() {
+    const sizes = await fetchApi('/stats/tables');
+    const container = document.getElementById('indexes-list');
+
+    if (!sizes || !Array.isArray(sizes) || sizes.length === 0) {
+        container.innerHTML = '<div class="no-data">Table info unavailable</div>';
+        return;
+    }
+
+    container.innerHTML = sizes.map(table => `
+        <div class="index-item">
+            <span class="index-name">${table.name}</span>
+            <div class="index-stats">
+                <span class="index-rows">${formatNumber(table.rowCount)} rows</span>
+                <span class="index-size">${formatBytes(table.sizeBytes)}</span>
+            </div>
+        </div>
+    `).join('');
 }
 
 function formatLargeDifficulty(diffStr) {
@@ -561,24 +636,41 @@ async function loadWalletData() {
 
         // Load balances
         const balances = await fetchApi('/wallet/balances');
-        if (balances && balances.balance !== undefined) {
+        if (balances) {
+            // Handle different response formats - balance could be at top level or nested
+            const balance = balances.balance ?? balances.confirmed?.nanoErgs ?? 0;
             document.getElementById('wallet-balance').textContent =
-                `${nanoErgToErg(balances.balance)} ERG`;
+                `${nanoErgToErg(balance)} ERG`;
 
-            // Display wallet tokens
-            const assets = balances.assets || [];
+            // Display wallet tokens - could be 'assets' or 'tokens'
+            const assets = balances.assets || balances.tokens || [];
             renderWalletTokens(assets);
             document.getElementById('token-count').textContent = assets.length;
         }
 
         // Load addresses
-        const addresses = await fetchApi('/wallet/addresses');
-        if (addresses) {
-            document.getElementById('address-count').textContent = addresses.length;
-            const list = document.getElementById('wallet-address-list');
+        let addresses = await fetchApi('/wallet/addresses');
+        const list = document.getElementById('wallet-address-list');
+
+        // Normalize addresses - could be array of strings or array of objects with 'address' field
+        if (addresses && Array.isArray(addresses)) {
+            addresses = addresses.map(addr => typeof addr === 'object' ? addr.address : addr);
+        } else {
+            addresses = [];
+        }
+
+        // Use changeAddress from status as fallback if no addresses returned
+        if (addresses.length === 0 && status.changeAddress) {
+            addresses = [status.changeAddress];
+        }
+
+        document.getElementById('address-count').textContent = addresses.length;
+        if (addresses.length > 0) {
             list.innerHTML = addresses.map(addr =>
                 `<div class="address-item" onclick="showAddressDetail('${addr}')">${addr}</div>`
             ).join('');
+        } else {
+            list.innerHTML = '<div class="no-data">No addresses found</div>';
         }
     } else {
         statusIndicator.classList.remove('connected', 'disconnected');
@@ -1199,6 +1291,11 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
+    // Handle browser back/forward with hash changes
+    window.addEventListener('hashchange', () => {
+        navigateTo(getPageFromHash(), false);
+    });
+
     // Search
     document.getElementById('searchBtn').addEventListener('click', performSearch);
     document.getElementById('searchInput').addEventListener('keypress', (e) => {
@@ -1229,8 +1326,9 @@ document.addEventListener('DOMContentLoaded', () => {
         });
     });
 
-    // Initial load
-    loadExplorerData();
+    // Initial load - navigate to page from URL hash or default to explorer
+    const initialPage = getPageFromHash();
+    navigateTo(initialPage, false);
 
     // Auto-refresh
     setInterval(() => {
