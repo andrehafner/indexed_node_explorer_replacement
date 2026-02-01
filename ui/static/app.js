@@ -636,25 +636,39 @@ async function loadWalletData() {
 
         // Load balances
         const balances = await fetchApi('/wallet/balances');
+        console.log('Wallet balances response:', balances);
         if (balances) {
             // Handle different response formats - balance could be at top level or nested
             const balance = balances.balance ?? balances.confirmed?.nanoErgs ?? 0;
             document.getElementById('wallet-balance').textContent =
                 `${nanoErgToErg(balance)} ERG`;
 
-            // Display wallet tokens - could be 'assets' or 'tokens'
-            const assets = balances.assets || balances.tokens || [];
+            // Display wallet tokens - ensure it's an array
+            let assets = balances.assets || balances.tokens || [];
+            // If assets is not an array, try to extract from nested structure
+            if (!Array.isArray(assets)) {
+                if (balances.confirmed?.tokens && Array.isArray(balances.confirmed.tokens)) {
+                    assets = balances.confirmed.tokens;
+                } else {
+                    assets = [];
+                }
+            }
+            console.log('Wallet assets:', assets);
             renderWalletTokens(assets);
             document.getElementById('token-count').textContent = assets.length;
         }
 
         // Load addresses
         let addresses = await fetchApi('/wallet/addresses');
+        console.log('Wallet addresses response:', addresses);
         const list = document.getElementById('wallet-address-list');
 
         // Normalize addresses - could be array of strings or array of objects with 'address' field
         if (addresses && Array.isArray(addresses)) {
-            addresses = addresses.map(addr => typeof addr === 'object' ? addr.address : addr);
+            addresses = addresses.map(addr => typeof addr === 'object' ? (addr.address || addr) : addr);
+        } else if (addresses && typeof addresses === 'object') {
+            // Could be an object with addresses property
+            addresses = addresses.addresses || [];
         } else {
             addresses = [];
         }
@@ -664,6 +678,7 @@ async function loadWalletData() {
             addresses = [status.changeAddress];
         }
 
+        console.log('Normalized addresses:', addresses);
         document.getElementById('address-count').textContent = addresses.length;
         if (addresses.length > 0) {
             list.innerHTML = addresses.map(addr =>
@@ -713,7 +728,8 @@ function renderWalletTokens(assets) {
     const container = document.getElementById('wallet-tokens');
     if (!container) return;
 
-    if (!assets || assets.length === 0) {
+    // Ensure assets is an array
+    if (!assets || !Array.isArray(assets) || assets.length === 0) {
         container.innerHTML = `
             <div style="text-align:center;color:var(--text-secondary);padding:2rem">
                 <p>No tokens in wallet</p>
@@ -779,30 +795,54 @@ async function lockWallet() {
 }
 
 async function sendTransaction() {
-    const to = document.getElementById('send-to').value;
-    const amount = parseFloat(document.getElementById('send-amount').value);
+    const to = document.getElementById('send-to').value.trim();
+    const amountStr = document.getElementById('send-amount').value.trim();
+    const amount = parseFloat(amountStr);
 
-    if (!to || !amount) {
-        alert('Please enter recipient and amount');
+    if (!to) {
+        alert('Please enter recipient address');
         return;
     }
 
+    if (!amountStr || isNaN(amount) || amount <= 0) {
+        alert('Please enter a valid amount');
+        return;
+    }
+
+    // Minimum fee is 0.001 ERG (1000000 nanoErg)
+    const fee = 1100000; // 0.0011 ERG to be safe
     const nanoErgs = Math.floor(amount * 1e9);
-    const result = await postApi('/wallet/transaction/send', {
+
+    // Ergo node expects this format for wallet/transaction/send
+    const payload = {
         requests: [{
             address: to,
             value: nanoErgs,
             assets: []
-        }]
-    });
+        }],
+        fee: fee,
+        inputsRaw: [],
+        dataInputsRaw: []
+    };
 
-    if (result && result.id) {
-        alert(`Transaction sent: ${result.id}`);
-        document.getElementById('send-to').value = '';
-        document.getElementById('send-amount').value = '';
-        loadWalletData();
-    } else {
-        alert('Failed to send transaction');
+    console.log('Sending transaction:', payload);
+
+    try {
+        const result = await postApi('/wallet/transaction/send', payload);
+        console.log('Transaction result:', result);
+
+        if (result && (result.id || typeof result === 'string')) {
+            const txId = result.id || result;
+            alert(`Transaction sent successfully!\n\nTX ID: ${truncateId(txId, 20)}`);
+            document.getElementById('send-to').value = '';
+            document.getElementById('send-amount').value = '';
+            loadWalletData();
+        } else {
+            alert('Failed to send transaction. Check console for details.');
+        }
+    } catch (e) {
+        console.error('Transaction error:', e);
+        alert(`Transaction failed: ${e.message || 'Unknown error'}`);
     }
 }
 
