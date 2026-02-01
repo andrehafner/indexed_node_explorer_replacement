@@ -327,17 +327,19 @@ impl NodeClient {
     }
 
     pub async fn wallet_unlock(&self, password: &str) -> Result<()> {
+        // Ergo node expects password as plain text body
         let resp = self
             .client
             .post(format!("{}/wallet/unlock", self.url))
             .header("api_key", self.api_key.as_deref().unwrap_or(""))
-            .header("Content-Type", "application/json")
-            .json(&serde_json::json!({ "pass": password }))
+            .header("Content-Type", "text/plain")
+            .body(password.to_string())
             .send()
             .await?;
 
         if resp.status() != StatusCode::OK {
-            anyhow::bail!("Failed to unlock wallet: {}", resp.status());
+            let error = resp.text().await.unwrap_or_default();
+            anyhow::bail!("Failed to unlock wallet: {}", error);
         }
 
         Ok(())
