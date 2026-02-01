@@ -15,6 +15,7 @@
         </div>
         <div class="nav-links">
             <a href="#" class="nav-link active" data-page="explorer">Explorer</a>
+            <a href="#" class="nav-link" data-page="tokens">Tokens</a>
             <a href="#" class="nav-link" data-page="wallet">Wallet</a>
             <a href="#" class="nav-link" data-page="status">Status</a>
             <a href="/docs" class="nav-link" target="_blank">API Docs</a>
@@ -60,6 +61,21 @@
                         <div class="loading">Loading...</div>
                     </div>
                 </div>
+            </div>
+        </div>
+
+        <!-- Tokens Page -->
+        <div id="tokens-page" class="page">
+            <div class="tokens-header">
+                <h2>Token Explorer</h2>
+                <div class="tokens-filters">
+                    <button class="filter-btn active" data-filter="all">All</button>
+                    <button class="filter-btn" data-filter="fungible">Fungible</button>
+                    <button class="filter-btn nft" data-filter="nft">NFTs</button>
+                </div>
+            </div>
+            <div id="tokens-list">
+                <div class="loading">Loading tokens...</div>
             </div>
         </div>
 

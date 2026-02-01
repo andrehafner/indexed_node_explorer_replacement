@@ -2,6 +2,16 @@
 
 const API_BASE = '/api/v1';
 
+// NFT Image CDN URLs
+const NFT_CDN = {
+    auctionHouse: 'https://f003.backblazeb2.com/file/auctionhouse-mainnet/original/',
+    ipfs: 'https://ipfs.io/ipfs/',
+    nautilusIcons: 'https://raw.githubusercontent.com/nautls/nautilus-wallet/master/public/icons/assets/'
+};
+
+// Cache for token images
+const tokenImageCache = new Map();
+
 // Utility functions
 function formatNumber(num) {
     if (num === null || num === undefined) return '-';
@@ -33,13 +43,163 @@ function formatTimestamp(ts) {
     return new Date(ts).toLocaleString();
 }
 
+function formatTimeAgo(ts) {
+    if (!ts) return '-';
+    const seconds = Math.floor((Date.now() - ts) / 1000);
+    if (seconds < 60) return 'just now';
+    if (seconds < 3600) return `${Math.floor(seconds / 60)}m ago`;
+    if (seconds < 86400) return `${Math.floor(seconds / 3600)}h ago`;
+    return `${Math.floor(seconds / 86400)}d ago`;
+}
+
 function truncateId(id, len = 16) {
     if (!id || id.length <= len) return id;
     return id.substring(0, len / 2) + '...' + id.substring(id.length - len / 2);
 }
 
 function nanoErgToErg(nanoErg) {
-    return (nanoErg / 1e9).toFixed(9);
+    if (!nanoErg) return '0';
+    return (nanoErg / 1e9).toFixed(4);
+}
+
+function formatTokenAmount(amount, decimals = 0) {
+    if (!amount) return '0';
+    if (decimals > 0) {
+        return (amount / Math.pow(10, decimals)).toFixed(decimals);
+    }
+    return formatNumber(amount);
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+
+function copyToClipboard(text) {
+    navigator.clipboard.writeText(text).then(() => {
+        // Show brief feedback
+        const btn = event.target;
+        const originalText = btn.textContent;
+        btn.textContent = '✓';
+        setTimeout(() => btn.textContent = originalText, 1000);
+    });
+}
+
+// NFT Image URL generation
+function isNFT(token) {
+    // NFT: emission amount = 1, decimals = 0
+    return token.emissionAmount === 1 && (!token.decimals || token.decimals === 0);
+}
+
+function getNFTImageUrl(tokenId) {
+    // Primary: Ergo Auction House CDN
+    return `${NFT_CDN.auctionHouse}${tokenId}`;
+}
+
+function getTokenIconUrl(tokenName) {
+    // Try Nautilus wallet icons
+    if (!tokenName) return null;
+    const name = tokenName.toLowerCase().replace(/\s+/g, '');
+    return `${NFT_CDN.nautilusIcons}${name}.png`;
+}
+
+function getIPFSUrl(hash) {
+    if (!hash) return null;
+    // Handle ipfs:// protocol
+    if (hash.startsWith('ipfs://')) {
+        hash = hash.replace('ipfs://', '');
+    }
+    return `${NFT_CDN.ipfs}${hash}`;
+}
+
+// Extract image URL from token description or registers
+function extractImageUrl(token) {
+    if (!token) return null;
+
+    // Check description for URLs
+    if (token.description) {
+        const urlMatch = token.description.match(/https?:\/\/[^\s"'<>]+\.(png|jpg|jpeg|gif|webp|svg)/i);
+        if (urlMatch) return urlMatch[0];
+
+        // Check for IPFS hash
+        const ipfsMatch = token.description.match(/ipfs:\/\/([a-zA-Z0-9]+)/i);
+        if (ipfsMatch) return getIPFSUrl(ipfsMatch[1]);
+
+        // Check for raw IPFS hash (Qm... or bafy...)
+        const rawIpfsMatch = token.description.match(/(Qm[a-zA-Z0-9]{44,}|bafy[a-zA-Z0-9]+)/);
+        if (rawIpfsMatch) return getIPFSUrl(rawIpfsMatch[1]);
+    }
+
+    return null;
+}
+
+// Load token image with fallbacks
+async function loadTokenImage(token, imgElement, size = 'small') {
+    const tokenId = token.id || token.tokenId;
+
+    // Check cache first
+    if (tokenImageCache.has(tokenId)) {
+        const cachedUrl = tokenImageCache.get(tokenId);
+        if (cachedUrl) {
+            imgElement.src = cachedUrl;
+            return true;
+        }
+        return false;
+    }
+
+    const urls = [];
+
+    if (isNFT(token)) {
+        // For NFTs, try auction house first
+        urls.push(getNFTImageUrl(tokenId));
+    } else {
+        // For fungible tokens, try Nautilus icons first
+        const iconUrl = getTokenIconUrl(token.name);
+        if (iconUrl) urls.push(iconUrl);
+    }
+
+    // Try extracted URL from description
+    const extractedUrl = extractImageUrl(token);
+    if (extractedUrl) urls.push(extractedUrl);
+
+    // Try each URL
+    for (const url of urls) {
+        try {
+            const loaded = await testImageLoad(url);
+            if (loaded) {
+                tokenImageCache.set(tokenId, url);
+                imgElement.src = url;
+                return true;
+            }
+        } catch (e) {
+            // Continue to next URL
+        }
+    }
+
+    // No image found
+    tokenImageCache.set(tokenId, null);
+    return false;
+}
+
+function testImageLoad(url, timeout = 5000) {
+    return new Promise((resolve) => {
+        const img = new Image();
+        const timer = setTimeout(() => {
+            img.src = '';
+            resolve(false);
+        }, timeout);
+        img.onload = () => {
+            clearTimeout(timer);
+            resolve(true);
+        };
+        img.onerror = () => {
+            clearTimeout(timer);
+            resolve(false);
+        };
+        img.src = url;
+    });
 }
 
 // API calls
@@ -74,13 +234,17 @@ function navigateTo(page) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
 
-    document.getElementById(`${page}-page`).classList.add('active');
-    document.querySelector(`[data-page="${page}"]`).classList.add('active');
+    const pageEl = document.getElementById(`${page}-page`);
+    const linkEl = document.querySelector(`[data-page="${page}"]`);
+
+    if (pageEl) pageEl.classList.add('active');
+    if (linkEl) linkEl.classList.add('active');
 
     // Load page data
     if (page === 'explorer') loadExplorerData();
     if (page === 'status') loadStatusData();
     if (page === 'wallet') loadWalletData();
+    if (page === 'tokens') loadTokensData();
 }
 
 // Explorer page
@@ -106,7 +270,7 @@ async function loadExplorerData() {
                 </div>
                 <div class="item-details">
                     <span>${block.txCount} txs</span>
-                    <span>${formatTimestamp(block.timestamp)}</span>
+                    <span>${formatTimeAgo(block.timestamp)}</span>
                 </div>
             </div>
         `).join('');
@@ -124,11 +288,99 @@ async function loadExplorerData() {
                 </div>
                 <div class="item-details">
                     <span>${tx.inputCount} in / ${tx.outputCount} out</span>
-                    <span>${tx.size} bytes</span>
+                    <span>${formatTimeAgo(tx.timestamp)}</span>
                 </div>
             </div>
         `).join('');
     }
+}
+
+// Tokens page
+let currentTokenFilter = 'all';
+let tokensData = [];
+
+async function loadTokensData() {
+    const container = document.getElementById('tokens-list');
+    if (!container) return;
+
+    container.innerHTML = '<div class="loading">Loading tokens...</div>';
+
+    const result = await fetchApi('/tokens?limit=50');
+    if (result && result.items) {
+        tokensData = result.items;
+        renderTokensList();
+    } else {
+        container.innerHTML = '<div class="loading">Failed to load tokens</div>';
+    }
+}
+
+function filterTokens(filter) {
+    currentTokenFilter = filter;
+
+    // Update button states
+    document.querySelectorAll('.filter-btn').forEach(btn => {
+        btn.classList.remove('active');
+        if (btn.dataset.filter === filter) btn.classList.add('active');
+    });
+
+    renderTokensList();
+}
+
+function renderTokensList() {
+    const container = document.getElementById('tokens-list');
+    if (!container) return;
+
+    let filtered = tokensData;
+    if (currentTokenFilter === 'nft') {
+        filtered = tokensData.filter(t => isNFT(t));
+    } else if (currentTokenFilter === 'fungible') {
+        filtered = tokensData.filter(t => !isNFT(t));
+    }
+
+    if (filtered.length === 0) {
+        container.innerHTML = '<div class="loading">No tokens found</div>';
+        return;
+    }
+
+    container.innerHTML = `
+        <div class="token-cards-grid">
+            ${filtered.map(token => renderTokenCard(token)).join('')}
+        </div>
+    `;
+
+    // Load images after render
+    filtered.forEach(token => {
+        const img = document.getElementById(`token-img-${token.id}`);
+        if (img) {
+            loadTokenImage(token, img);
+        }
+    });
+}
+
+function renderTokenCard(token) {
+    const isNft = isNFT(token);
+    const displayName = token.name || truncateId(token.id);
+    const firstLetter = (token.name || token.id || '?')[0].toUpperCase();
+
+    return `
+        <div class="token-card ${isNft ? 'nft' : ''}" onclick="showTokenDetail('${token.id}')">
+            <div class="token-card-icon">
+                <img id="token-img-${token.id}"
+                     src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                     alt=""
+                     onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+                     style="display:none;">
+                <span>${firstLetter}</span>
+            </div>
+            <div class="token-card-info">
+                <div class="token-card-name">${escapeHtml(displayName)}</div>
+                <div class="token-card-amount">
+                    ${isNft ? 'NFT' : formatTokenAmount(token.emissionAmount, token.decimals)}
+                </div>
+                <div class="token-card-id">${truncateId(token.id, 12)}</div>
+            </div>
+        </div>
+    `;
 }
 
 // Status page
@@ -212,7 +464,7 @@ async function loadWalletData() {
         if (addresses) {
             const list = document.getElementById('wallet-address-list');
             list.innerHTML = addresses.map(addr =>
-                `<div class="address-item">${addr}</div>`
+                `<div class="address-item" onclick="showAddressDetail('${addr}')" style="cursor:pointer">${addr}</div>`
             ).join('');
         }
     } else {
@@ -278,6 +530,12 @@ async function performSearch() {
         return;
     }
 
+    // If single exact match, go directly to detail
+    if (results.length === 1) {
+        handleSearchResult(results[0].entityType, results[0].entityId);
+        return;
+    }
+
     const modal = document.getElementById('search-modal');
     const container = document.getElementById('search-results');
 
@@ -340,7 +598,10 @@ async function showBlockDetail(blockId) {
             <h4>Block Info</h4>
             <div class="detail-row">
                 <span class="detail-label">Block ID</span>
-                <span class="detail-value">${block.id}</span>
+                <span class="detail-value">
+                    ${block.id}
+                    <button class="copy-btn" onclick="copyToClipboard('${block.id}')">📋</button>
+                </span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">Parent</span>
@@ -388,6 +649,10 @@ async function showBlockDetail(blockId) {
                 </div>
             `).join('') || 'No transactions'}
         </div>
+        <div class="external-links">
+            <a href="https://explorer.ergoplatform.com/en/blocks/${block.id}" target="_blank" class="external-link">Ergo Explorer ↗</a>
+            <a href="https://ergexplorer.com/block/${block.id}" target="_blank" class="external-link">ErgExplorer ↗</a>
+        </div>
     `;
 
     modal.classList.remove('hidden');
@@ -405,7 +670,10 @@ async function showTxDetail(txId) {
             <h4>Transaction Info</h4>
             <div class="detail-row">
                 <span class="detail-label">TX ID</span>
-                <span class="detail-value">${tx.id}</span>
+                <span class="detail-value">
+                    ${tx.id}
+                    <button class="copy-btn" onclick="copyToClipboard('${tx.id}')">📋</button>
+                </span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">Block</span>
@@ -446,6 +714,10 @@ async function showTxDetail(txId) {
                 </div>
             `).join('') || '-'}
         </div>
+        <div class="external-links">
+            <a href="https://explorer.ergoplatform.com/en/transactions/${tx.id}" target="_blank" class="external-link">Ergo Explorer ↗</a>
+            <a href="https://ergexplorer.com/tx/${tx.id}" target="_blank" class="external-link">ErgExplorer ↗</a>
+        </div>
     `;
 
     modal.classList.remove('hidden');
@@ -460,20 +732,34 @@ async function showAddressDetail(address) {
     const modal = document.getElementById('detail-modal');
     document.getElementById('detail-title').textContent = 'Address';
 
+    const tokens = info.balance?.tokens || [];
+    const nfts = tokens.filter(t => t.amount === 1);
+    const fungibles = tokens.filter(t => t.amount !== 1);
+
     document.getElementById('detail-content').innerHTML = `
+        <div class="address-balance-hero">
+            <div>
+                <div class="address-balance-erg">${nanoErgToErg(info.balance?.nanoErgs || 0)} ERG</div>
+            </div>
+            <div class="address-stats-mini">
+                <div class="address-stat">
+                    <div class="address-stat-value">${formatNumber(info.txCount || 0)}</div>
+                    <div class="address-stat-label">Transactions</div>
+                </div>
+                <div class="address-stat">
+                    <div class="address-stat-value">${tokens.length}</div>
+                    <div class="address-stat-label">Tokens</div>
+                </div>
+            </div>
+        </div>
+
         <div class="detail-section">
-            <h4>Address Info</h4>
+            <h4>Address</h4>
             <div class="detail-row">
-                <span class="detail-label">Address</span>
-                <span class="detail-value">${info.address}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Balance</span>
-                <span class="detail-value">${nanoErgToErg(info.balance.nanoErgs)} ERG</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Transactions</span>
-                <span class="detail-value">${formatNumber(info.txCount)}</span>
+                <span class="detail-value" style="max-width:100%; font-size:0.8rem">
+                    ${info.address}
+                    <button class="copy-btn" onclick="copyToClipboard('${info.address}')">📋</button>
+                </span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">First Seen</span>
@@ -484,31 +770,90 @@ async function showAddressDetail(address) {
                 <span class="detail-value">Block #${info.lastSeenHeight || '-'}</span>
             </div>
         </div>
-        ${info.balance.tokens?.length > 0 ? `
+
+        ${nfts.length > 0 ? `
         <div class="detail-section">
-            <h4>Tokens (${info.balance.tokens.length})</h4>
-            ${info.balance.tokens.slice(0, 10).map(token => `
-                <div class="detail-row">
-                    <span class="detail-value" style="font-size:0.75rem">
-                        <a href="#" onclick="showTokenDetail('${token.tokenId}')">${token.name || truncateId(token.tokenId)}</a>
-                    </span>
-                    <span class="detail-label">${formatNumber(token.amount)}</span>
-                </div>
-            `).join('')}
+            <div class="section-header">
+                <span class="section-title">NFTs</span>
+                <span class="section-count">${nfts.length}</span>
+            </div>
+            <div class="nft-gallery" id="address-nfts">
+                ${nfts.slice(0, 8).map(nft => `
+                    <div class="nft-thumb" onclick="showTokenDetail('${nft.tokenId}')">
+                        <div class="nft-thumb-image">
+                            <img id="nft-thumb-${nft.tokenId}"
+                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                                 alt=""
+                                 onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';">
+                            <span class="placeholder" style="display:none">🖼️</span>
+                        </div>
+                        <div class="nft-thumb-info">
+                            <div class="nft-thumb-name">${escapeHtml(nft.name) || truncateId(nft.tokenId, 8)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
         </div>
         ` : ''}
+
+        ${fungibles.length > 0 ? `
+        <div class="detail-section">
+            <div class="section-header">
+                <span class="section-title">Tokens</span>
+                <span class="section-count">${fungibles.length}</span>
+            </div>
+            <div class="token-cards-grid">
+                ${fungibles.slice(0, 6).map(token => `
+                    <div class="token-card" onclick="showTokenDetail('${token.tokenId}')">
+                        <div class="token-card-icon">
+                            <img id="token-card-${token.tokenId}"
+                                 src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                                 alt=""
+                                 onerror="this.style.display='none';">
+                            <span>${(token.name || token.tokenId || '?')[0].toUpperCase()}</span>
+                        </div>
+                        <div class="token-card-info">
+                            <div class="token-card-name">${escapeHtml(token.name) || truncateId(token.tokenId, 8)}</div>
+                            <div class="token-card-amount">${formatTokenAmount(token.amount, token.decimals)}</div>
+                        </div>
+                    </div>
+                `).join('')}
+            </div>
+        </div>
+        ` : ''}
+
         <div class="detail-section">
             <h4>Recent Transactions</h4>
             ${txs?.items?.map(tx => `
-                <div class="detail-row" style="cursor:pointer" onclick="showTxDetail('${tx.id}')">
-                    <span class="detail-value" style="color: var(--accent-primary)">${truncateId(tx.id)}</span>
-                    <span class="detail-label">${formatTimestamp(tx.timestamp)}</span>
+                <div class="tx-item" onclick="showTxDetail('${tx.id}')">
+                    <div class="tx-item-left">
+                        <span class="tx-item-id">${truncateId(tx.id)}</span>
+                        <span class="tx-item-time">${formatTimeAgo(tx.timestamp)}</span>
+                    </div>
                 </div>
             `).join('') || 'No transactions'}
+        </div>
+
+        <div class="external-links">
+            <a href="https://explorer.ergoplatform.com/en/addresses/${address}" target="_blank" class="external-link">Ergo Explorer ↗</a>
+            <a href="https://ergexplorer.com/address/${address}" target="_blank" class="external-link">ErgExplorer ↗</a>
         </div>
     `;
 
     modal.classList.remove('hidden');
+
+    // Load NFT images
+    nfts.slice(0, 8).forEach(nft => {
+        const img = document.getElementById(`nft-thumb-${nft.tokenId}`);
+        if (img) {
+            img.src = getNFTImageUrl(nft.tokenId);
+            img.onload = () => { img.style.display = 'block'; };
+            img.onerror = () => {
+                img.style.display = 'none';
+                img.nextElementSibling.style.display = 'flex';
+            };
+        }
+    });
 }
 
 async function showTokenDetail(tokenId) {
@@ -516,38 +861,72 @@ async function showTokenDetail(tokenId) {
     if (!token) return;
 
     const holders = await fetchApi(`/tokens/${tokenId}/holders?limit=10`);
+    const isNft = isNFT(token);
 
     const modal = document.getElementById('detail-modal');
     document.getElementById('detail-title').textContent = token.name || 'Token';
 
+    const displayName = token.name || 'Unknown Token';
+    const firstLetter = displayName[0].toUpperCase();
+
     document.getElementById('detail-content').innerHTML = `
+        <div class="token-hero">
+            <div class="token-icon-box" id="token-detail-icon">
+                <span>${firstLetter}</span>
+            </div>
+            <div class="token-info">
+                <div class="token-name-row">
+                    <span class="token-name">${escapeHtml(displayName)}</span>
+                    <span class="badge ${isNft ? 'badge-nft' : 'badge-token'}">${isNft ? 'NFT' : 'Token'}</span>
+                </div>
+                <div class="token-id-row">
+                    <span class="token-id">${token.id}</span>
+                    <button class="copy-btn" onclick="copyToClipboard('${token.id}')">📋</button>
+                </div>
+                ${token.description ? `<div class="token-description">${escapeHtml(token.description)}</div>` : ''}
+            </div>
+        </div>
+
+        ${isNft ? `
+        <div class="nft-preview">
+            <div class="nft-image-container loading" id="nft-image-container">
+                <img id="nft-detail-image"
+                     src="${getNFTImageUrl(tokenId)}"
+                     alt="${escapeHtml(displayName)}"
+                     onload="this.parentElement.classList.remove('loading'); document.getElementById('nft-loading-text')?.remove();"
+                     onerror="tryNextImageSource(this, '${tokenId}');">
+                <div class="nft-loading-text" id="nft-loading-text">Loading image...</div>
+            </div>
+            <div class="nft-footer">
+                <span class="nft-source" id="nft-source">Ergo Auction House</span>
+                <div class="nft-actions">
+                    <button class="btn btn-secondary btn-small" onclick="window.open('${getNFTImageUrl(tokenId)}', '_blank')">Open Original</button>
+                    <a href="https://ergoauctions.org/artwork/${tokenId}" target="_blank" class="btn btn-secondary btn-small">Ergo Auctions ↗</a>
+                </div>
+            </div>
+        </div>
+        ` : ''}
+
         <div class="detail-section">
-            <h4>Token Info</h4>
+            <h4>Token Details</h4>
             <div class="detail-row">
-                <span class="detail-label">Token ID</span>
-                <span class="detail-value">${token.id}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Name</span>
-                <span class="detail-value">${token.name || '-'}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Description</span>
-                <span class="detail-value">${token.description || '-'}</span>
+                <span class="detail-label">Total Supply</span>
+                <span class="detail-value">${formatTokenAmount(token.emissionAmount, token.decimals)}</span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">Decimals</span>
-                <span class="detail-value">${token.decimals ?? '-'}</span>
-            </div>
-            <div class="detail-row">
-                <span class="detail-label">Total Supply</span>
-                <span class="detail-value">${formatNumber(token.emissionAmount)}</span>
+                <span class="detail-value">${token.decimals ?? 0}</span>
             </div>
             <div class="detail-row">
                 <span class="detail-label">Created at Height</span>
                 <span class="detail-value">${formatNumber(token.creationHeight)}</span>
             </div>
+            <div class="detail-row">
+                <span class="detail-label">Minting Box</span>
+                <span class="detail-value">${truncateId(token.boxId)}</span>
+            </div>
         </div>
+
         <div class="detail-section">
             <h4>Top Holders</h4>
             ${holders?.items?.map(h => `
@@ -555,13 +934,59 @@ async function showTokenDetail(tokenId) {
                     <span class="detail-value" style="font-size:0.75rem">
                         <a href="#" onclick="showAddressDetail('${h.address}')">${truncateId(h.address)}</a>
                     </span>
-                    <span class="detail-label">${formatNumber(h.balance)}</span>
+                    <span class="detail-label">${formatTokenAmount(h.balance, token.decimals)}</span>
                 </div>
-            `).join('') || 'No holders'}
+            `).join('') || 'No holders found'}
+        </div>
+
+        <div class="external-links">
+            <a href="https://explorer.ergoplatform.com/en/tokens/${tokenId}" target="_blank" class="external-link">Ergo Explorer ↗</a>
+            <a href="https://ergexplorer.com/token/${tokenId}" target="_blank" class="external-link">ErgExplorer ↗</a>
+            ${isNft ? `<a href="https://ergoauctions.org/artwork/${tokenId}" target="_blank" class="external-link">Ergo Auctions ↗</a>` : ''}
+            <a href="https://sigmaspace.io/token/${tokenId}" target="_blank" class="external-link">SigmaSpace ↗</a>
         </div>
     `;
 
     modal.classList.remove('hidden');
+
+    // Load token icon for fungible tokens
+    if (!isNft && token.name) {
+        const iconBox = document.getElementById('token-detail-icon');
+        const iconUrl = getTokenIconUrl(token.name);
+        if (iconUrl) {
+            const img = new Image();
+            img.onload = () => {
+                iconBox.innerHTML = `<img src="${iconUrl}" alt="">`;
+            };
+            img.src = iconUrl;
+        }
+    }
+}
+
+// NFT image fallback chain
+let imageSourceIndex = {};
+
+function tryNextImageSource(imgElement, tokenId) {
+    const sources = [
+        { url: getNFTImageUrl(tokenId), name: 'Ergo Auction House' },
+        { url: `https://ipfs.io/ipfs/${tokenId}`, name: 'IPFS' },
+    ];
+
+    const currentIndex = imageSourceIndex[tokenId] || 0;
+    const nextIndex = currentIndex + 1;
+
+    if (nextIndex < sources.length) {
+        imageSourceIndex[tokenId] = nextIndex;
+        imgElement.src = sources[nextIndex].url;
+        const sourceLabel = document.getElementById('nft-source');
+        if (sourceLabel) sourceLabel.textContent = sources[nextIndex].name;
+    } else {
+        // All sources failed
+        imgElement.parentElement.classList.remove('loading');
+        imgElement.parentElement.innerHTML = '<div class="placeholder" style="font-size:4rem;color:var(--accent-nft)">🖼️</div>';
+        const loadingText = document.getElementById('nft-loading-text');
+        if (loadingText) loadingText.textContent = 'Image not available';
+    }
 }
 
 // Modal handling
@@ -586,9 +1011,14 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     // Wallet actions
-    document.getElementById('unlock-btn').addEventListener('click', unlockWallet);
-    document.getElementById('lock-btn').addEventListener('click', lockWallet);
-    document.getElementById('send-btn').addEventListener('click', sendTransaction);
+    document.getElementById('unlock-btn')?.addEventListener('click', unlockWallet);
+    document.getElementById('lock-btn')?.addEventListener('click', lockWallet);
+    document.getElementById('send-btn')?.addEventListener('click', sendTransaction);
+
+    // Token filters
+    document.querySelectorAll('.filter-btn[data-filter]').forEach(btn => {
+        btn.addEventListener('click', () => filterTokens(btn.dataset.filter));
+    });
 
     // Modal close buttons
     document.querySelectorAll('.modal-close').forEach(btn => {
@@ -611,7 +1041,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Auto-refresh
     setInterval(() => {
-        const activePage = document.querySelector('.page.active').id.replace('-page', '');
+        const activePage = document.querySelector('.page.active')?.id?.replace('-page', '');
         if (activePage === 'explorer') loadExplorerData();
         if (activePage === 'status') loadStatusData();
     }, 10000);
