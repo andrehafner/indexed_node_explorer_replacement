@@ -202,14 +202,25 @@ function testImageLoad(url, timeout = 5000) {
     });
 }
 
-// API calls
-async function fetchApi(endpoint) {
+// API calls with timeout
+async function fetchApi(endpoint, timeoutMs = 10000) {
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), timeoutMs);
+
     try {
-        const res = await fetch(`${API_BASE}${endpoint}`);
+        const res = await fetch(`${API_BASE}${endpoint}`, {
+            signal: controller.signal
+        });
+        clearTimeout(timeoutId);
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return await res.json();
     } catch (e) {
-        console.error(`API error: ${endpoint}`, e);
+        clearTimeout(timeoutId);
+        if (e.name === 'AbortError') {
+            console.warn(`API timeout: ${endpoint} (sync may be running)`);
+        } else {
+            console.error(`API error: ${endpoint}`, e);
+        }
         return null;
     }
 }
@@ -305,12 +316,20 @@ async function loadTokensData() {
 
     container.innerHTML = '<div class="loading">Loading tokens...</div>';
 
-    const result = await fetchApi('/tokens?limit=50');
+    const result = await fetchApi('/tokens?limit=50', 15000);
     if (result && result.items) {
         tokensData = result.items;
         renderTokensList();
     } else {
-        container.innerHTML = '<div class="loading">Failed to load tokens</div>';
+        container.innerHTML = `
+            <div class="loading">
+                <p>Unable to load tokens</p>
+                <p style="font-size:0.8rem;margin-top:0.5rem;color:var(--text-secondary)">
+                    If sync is running, database queries may be slow. Try again in a moment.
+                </p>
+                <button class="btn btn-secondary btn-small" style="margin-top:1rem" onclick="loadTokensData()">Retry</button>
+            </div>
+        `;
     }
 }
 
@@ -435,12 +454,34 @@ async function loadWalletData() {
 
     const statusDot = document.querySelector('.wallet-status .status-dot');
     const statusText = document.querySelector('.wallet-status .status-text');
+    const lockedSection = document.getElementById('wallet-locked');
 
     if (!status || status.error) {
         statusDot.classList.remove('connected');
         statusDot.classList.add('disconnected');
-        statusText.textContent = status?.error || 'Node unavailable';
-        document.getElementById('wallet-locked').classList.remove('hidden');
+
+        // Check for common errors
+        let errorMsg = status?.error || 'Node unavailable';
+        let helpText = '';
+
+        if (errorMsg.includes('401') || errorMsg.includes('Unauthorized') || errorMsg.includes('api_key')) {
+            errorMsg = 'API Key Required';
+            helpText = 'Set NODE_API_KEY in docker-compose to match your Ergo node API key.';
+        } else if (errorMsg.includes('timeout') || errorMsg.includes('connect')) {
+            errorMsg = 'Node Unavailable';
+            helpText = 'Cannot connect to the Ergo node. Make sure it is running.';
+        }
+
+        statusText.textContent = errorMsg;
+
+        // Show help text in the locked section
+        lockedSection.innerHTML = `
+            <div style="text-align:center;color:var(--text-secondary)">
+                <p style="font-size:1.1rem;margin-bottom:0.5rem">${errorMsg}</p>
+                ${helpText ? `<p style="font-size:0.875rem">${helpText}</p>` : ''}
+            </div>
+        `;
+        lockedSection.classList.remove('hidden');
         document.getElementById('wallet-unlocked').classList.add('hidden');
         return;
     }
@@ -449,7 +490,7 @@ async function loadWalletData() {
         statusDot.classList.add('connected');
         statusDot.classList.remove('disconnected');
         statusText.textContent = 'Unlocked';
-        document.getElementById('wallet-locked').classList.add('hidden');
+        lockedSection.classList.add('hidden');
         document.getElementById('wallet-unlocked').classList.remove('hidden');
 
         // Load balances
@@ -470,7 +511,19 @@ async function loadWalletData() {
     } else {
         statusDot.classList.remove('connected', 'disconnected');
         statusText.textContent = status.initialized ? 'Locked' : 'Not initialized';
-        document.getElementById('wallet-locked').classList.remove('hidden');
+
+        // Restore the unlock form HTML
+        lockedSection.innerHTML = `
+            <div class="unlock-form">
+                <h3>Unlock Wallet</h3>
+                <input type="password" id="wallet-password" placeholder="Enter wallet password">
+                <button id="unlock-btn" class="btn btn-primary">Unlock</button>
+            </div>
+        `;
+        // Re-attach event listener
+        document.getElementById('unlock-btn')?.addEventListener('click', unlockWallet);
+
+        lockedSection.classList.remove('hidden');
         document.getElementById('wallet-unlocked').classList.add('hidden');
     }
 }
