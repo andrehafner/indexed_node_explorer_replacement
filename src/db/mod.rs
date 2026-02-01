@@ -30,12 +30,20 @@ impl Database {
     pub fn new(path: &str) -> Result<Self> {
         let conn = Connection::open(path).context("Failed to open database")?;
 
-        // Enable optimizations for faster writes
-        conn.execute_batch(
-            "SET threads=4;
-             SET memory_limit='1GB';
+        // Get memory limit from environment or default to 2GB
+        let memory_limit = std::env::var("DUCKDB_MEMORY_LIMIT")
+            .unwrap_or_else(|_| "2GB".to_string());
+
+        // Enable optimizations for faster writes with lower memory usage
+        conn.execute_batch(&format!(
+            "SET threads=2;
+             SET memory_limit='{}';
+             SET preserve_insertion_order=false;
+             SET checkpoint_threshold='256MB';
+             SET wal_autocheckpoint='256MB';
              PRAGMA enable_progress_bar=false;",
-        )?;
+            memory_limit
+        ))?;
 
         Ok(Self {
             conn: Arc::new(Mutex::new(conn)),
@@ -88,6 +96,13 @@ impl Database {
     pub fn execute_batch(&self, sql: &str) -> Result<()> {
         let conn = self.conn.lock().unwrap();
         Ok(conn.execute_batch(sql)?)
+    }
+
+    /// Force a checkpoint to flush data to disk and free memory
+    pub fn checkpoint(&self) -> Result<()> {
+        let conn = self.conn.lock().unwrap();
+        conn.execute("CHECKPOINT", [])?;
+        Ok(())
     }
 
     /// Execute multiple statements within a transaction for better performance
