@@ -41,7 +41,7 @@ fn default_limit() -> i64 { 20 }
         ("sortDirection" = Option<String>, Query, description = "Sort direction: asc, desc")
     ),
     responses(
-        (status = 200, description = "Transaction list", body = PaginatedResponse<TransactionSummary>),
+        (status = 200, description = "Transaction list", body = PaginatedTransactions),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -186,7 +186,7 @@ pub async fn get_transaction(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Transactions in block", body = PaginatedResponse<TransactionSummary>)
+        (status = 200, description = "Transactions in block", body = PaginatedTransactions)
     )
 )]
 pub async fn get_transactions_by_block(
@@ -240,7 +240,7 @@ pub async fn get_transactions_by_block(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Address transactions", body = PaginatedResponse<TransactionSummary>)
+        (status = 200, description = "Address transactions", body = PaginatedTransactions)
     )
 )]
 pub async fn get_transactions_by_address(

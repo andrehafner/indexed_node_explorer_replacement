@@ -32,7 +32,7 @@ fn default_limit() -> i64 { 20 }
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Token list", body = PaginatedResponse<TokenSummary>)
+        (status = 200, description = "Token list", body = PaginatedTokens)
     )
 )]
 pub async fn get_tokens(
@@ -120,7 +120,7 @@ pub async fn get_token(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Search results", body = PaginatedResponse<TokenSummary>)
+        (status = 200, description = "Search results", body = PaginatedTokens)
     )
 )]
 pub async fn search_tokens(
@@ -173,7 +173,7 @@ pub async fn search_tokens(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Token holders", body = PaginatedResponse<TokenHolder>)
+        (status = 200, description = "Token holders", body = inline(PaginatedTokenHolders))
     )
 )]
 pub async fn get_token_holders(
@@ -253,4 +253,12 @@ pub async fn get_tokens_by_address(
 pub struct TokenHolder {
     pub address: String,
     pub balance: i64,
+}
+
+/// Paginated token holders response (for OpenAPI schema)
+#[derive(serde::Serialize, utoipa::ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct PaginatedTokenHolders {
+    pub items: Vec<TokenHolder>,
+    pub total: i64,
 }

@@ -250,6 +250,13 @@ impl Default for Pagination {
 
 /// Paginated response wrapper
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[aliases(
+    PaginatedBlocks = PaginatedResponse<BlockSummary>,
+    PaginatedTransactions = PaginatedResponse<TransactionSummary>,
+    PaginatedOutputs = PaginatedResponse<Output>,
+    PaginatedTokens = PaginatedResponse<TokenSummary>,
+    PaginatedEpochs = PaginatedResponse<Epoch>
+)]
 #[serde(rename_all = "camelCase")]
 pub struct PaginatedResponse<T> {
     pub items: Vec<T>,
@@ -280,6 +287,15 @@ pub struct Epoch {
     pub timestamp_start: i64,
     pub timestamp_end: Option<i64>,
     pub block_count: i32,
+}
+
+/// Table size info
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct TableSize {
+    pub name: String,
+    pub row_count: i64,
+    pub size_bytes: i64,
 }
 
 /// Node info (from connected node)

@@ -36,7 +36,7 @@ fn default_limit() -> i64 { 20 }
         ("sortDirection" = Option<String>, Query, description = "Sort direction: asc, desc")
     ),
     responses(
-        (status = 200, description = "List of blocks", body = PaginatedResponse<BlockSummary>),
+        (status = 200, description = "List of blocks", body = PaginatedBlocks),
         (status = 500, description = "Internal server error")
     )
 )]
@@ -245,7 +245,7 @@ pub async fn get_block_at_height(
         ("limit" = Option<i64>, Query, description = "Results per page")
     ),
     responses(
-        (status = 200, description = "Blocks by miner", body = PaginatedResponse<BlockSummary>),
+        (status = 200, description = "Blocks by miner", body = PaginatedBlocks),
         (status = 500, description = "Internal server error")
     )
 )]

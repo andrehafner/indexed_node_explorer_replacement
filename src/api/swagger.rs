@@ -71,6 +71,7 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
         stats::get_info,
         stats::get_stats,
         stats::get_network_stats,
+        stats::get_table_sizes,
         // Search
         search::search,
         // Wallet
@@ -103,7 +104,15 @@ Most endpoints are public. Wallet endpoints require the node API key to be confi
             WalletStatus,
             WalletBalance,
             PaymentRequest,
+            TableSize,
             tokens::TokenHolder,
+            tokens::PaginatedTokenHolders,
+            // Paginated response aliases
+            PaginatedBlocks,
+            PaginatedTransactions,
+            PaginatedOutputs,
+            PaginatedTokens,
+            PaginatedEpochs,
         )
     )
 )]
