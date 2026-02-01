@@ -329,11 +329,13 @@ impl NodeClient {
     pub async fn wallet_unlock(&self, password: &str) -> Result<()> {
         let url = format!("{}/wallet/unlock", self.url);
         tracing::info!("Attempting wallet unlock at: {}", url);
+        tracing::debug!("API key present: {}", self.api_key.is_some());
 
         let resp = self
             .client
             .post(&url)
             .header("api_key", self.api_key.as_deref().unwrap_or(""))
+            .header("Content-Type", "application/json")
             .json(&serde_json::json!({ "pass": password }))
             .send()
             .await?;

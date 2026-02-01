@@ -584,10 +584,7 @@ function formatLargeDifficulty(diffStr) {
     return formatNumber(num);
 }
 
-// Wallet session state - requires re-authentication on page load for security
-let walletSessionUnlocked = false;
-
-// Wallet page
+// Wallet page - shows actual status from the Ergo node
 async function loadWalletData() {
     const status = await fetchApi('/wallet/status');
 
@@ -633,9 +630,8 @@ async function loadWalletData() {
         return;
     }
 
-    // Check if wallet is unlocked AND we have session authorization
-    // For security, require password entry on each page load
-    if (status.unlocked && walletSessionUnlocked) {
+    // Check if wallet is unlocked on the node
+    if (status.unlocked) {
         statusIndicator.classList.add('connected');
         statusIndicator.classList.remove('disconnected');
         statusText.textContent = 'Unlocked';
@@ -697,16 +693,12 @@ async function loadWalletData() {
             list.innerHTML = '<div class="no-data">No addresses found</div>';
         }
     } else {
-        // Either wallet is locked on node OR session not authorized
-        statusIndicator.classList.remove('connected', 'disconnected');
+        // Wallet is locked on the node
+        statusIndicator.classList.remove('connected');
+        statusIndicator.classList.add('disconnected');
 
         // Determine the right status text
-        let statusMsg = 'Locked';
-        if (status.unlocked && !walletSessionUnlocked) {
-            statusMsg = 'Session Locked';
-        } else if (!status.initialized) {
-            statusMsg = 'Not initialized';
-        }
+        let statusMsg = status.initialized ? 'Locked' : 'Not initialized';
         statusText.textContent = statusMsg;
 
         // Restore the unlock form HTML
@@ -806,8 +798,6 @@ async function unlockWallet() {
 
     const result = await postApi('/wallet/unlock', { pass: password });
     if (result && result.success === true) {
-        // Set session as unlocked
-        walletSessionUnlocked = true;
         loadWalletData();
     } else {
         const errorMsg = result?.error || 'Unknown error';
@@ -816,10 +806,13 @@ async function unlockWallet() {
 }
 
 async function lockWallet() {
-    await postApi('/wallet/lock', {});
-    // Clear session state
-    walletSessionUnlocked = false;
-    loadWalletData();
+    const result = await postApi('/wallet/lock', {});
+    if (result && result.success === true) {
+        loadWalletData();
+    } else {
+        const errorMsg = result?.error || 'Failed to lock wallet';
+        alert(errorMsg);
+    }
 }
 
 async function sendTransaction() {
