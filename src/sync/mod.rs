@@ -181,6 +181,11 @@ impl SyncService {
             }
             drop(processor);
 
+            // Force checkpoint to flush to disk and free memory
+            if let Err(e) = self.db.checkpoint() {
+                tracing::warn!("Checkpoint failed: {}", e);
+            }
+
             self.blocks_synced
                 .fetch_add(batch_size as u64, Ordering::SeqCst);
             self.local_height.store(batch_end, Ordering::SeqCst);

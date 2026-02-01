@@ -42,8 +42,8 @@ pub struct Config {
     #[arg(long, env = "HOST", default_value = "0.0.0.0")]
     pub host: String,
 
-    /// Sync batch size (blocks per batch)
-    #[arg(long, env = "SYNC_BATCH_SIZE", default_value = "100")]
+    /// Sync batch size (blocks per batch, lower uses less memory)
+    #[arg(long, env = "SYNC_BATCH_SIZE", default_value = "10")]
     pub sync_batch_size: u32,
 
     /// Sync interval in seconds
