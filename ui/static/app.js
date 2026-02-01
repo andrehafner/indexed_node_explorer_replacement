@@ -580,6 +580,9 @@ function formatLargeDifficulty(diffStr) {
     return formatNumber(num);
 }
 
+// Wallet session state - requires re-authentication on page load for security
+let walletSessionUnlocked = false;
+
 // Wallet page
 async function loadWalletData() {
     const status = await fetchApi('/wallet/status');
@@ -626,7 +629,9 @@ async function loadWalletData() {
         return;
     }
 
-    if (status.unlocked) {
+    // Check if wallet is unlocked AND we have session authorization
+    // For security, require password entry on each page load
+    if (status.unlocked && walletSessionUnlocked) {
         statusIndicator.classList.add('connected');
         statusIndicator.classList.remove('disconnected');
         statusText.textContent = 'Unlocked';
@@ -688,8 +693,17 @@ async function loadWalletData() {
             list.innerHTML = '<div class="no-data">No addresses found</div>';
         }
     } else {
+        // Either wallet is locked on node OR session not authorized
         statusIndicator.classList.remove('connected', 'disconnected');
-        statusText.textContent = status.initialized ? 'Locked' : 'Not initialized';
+
+        // Determine the right status text
+        let statusMsg = 'Locked';
+        if (status.unlocked && !walletSessionUnlocked) {
+            statusMsg = 'Session Locked';
+        } else if (!status.initialized) {
+            statusMsg = 'Not initialized';
+        }
+        statusText.textContent = statusMsg;
 
         // Restore the unlock form HTML
         lockedSection.innerHTML = `
@@ -781,16 +795,25 @@ function renderWalletTokens(assets) {
 // Wallet actions
 async function unlockWallet() {
     const password = document.getElementById('wallet-password').value;
+    if (!password) {
+        alert('Please enter your wallet password');
+        return;
+    }
+
     const result = await postApi('/wallet/unlock', { pass: password });
-    if (result && result.success) {
+    if (result && result.success !== false) {
+        // Set session as unlocked
+        walletSessionUnlocked = true;
         loadWalletData();
     } else {
-        alert('Failed to unlock wallet');
+        alert('Failed to unlock wallet. Check your password.');
     }
 }
 
 async function lockWallet() {
     await postApi('/wallet/lock', {});
+    // Clear session state
+    walletSessionUnlocked = false;
     loadWalletData();
 }
 
