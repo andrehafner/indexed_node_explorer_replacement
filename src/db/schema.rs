@@ -28,6 +28,8 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         CREATE INDEX IF NOT EXISTS idx_blocks_global_index ON blocks(global_index);
 
         -- Transactions table
+        -- NOTE: FK constraints removed - DuckDB FK implementation causes issues with sync
+        -- Referential integrity is guaranteed by the blockchain itself
         CREATE TABLE IF NOT EXISTS transactions (
             tx_id VARCHAR(64) PRIMARY KEY,
             block_id VARCHAR(64) NOT NULL,
@@ -38,8 +40,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             coinbase BOOLEAN NOT NULL DEFAULT FALSE,
             size INTEGER NOT NULL,
             input_count INTEGER NOT NULL,
-            output_count INTEGER NOT NULL,
-            FOREIGN KEY (block_id) REFERENCES blocks(block_id)
+            output_count INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_tx_block ON transactions(block_id);
@@ -62,8 +63,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             additional_registers TEXT,
             spent_tx_id VARCHAR(64),
             spent_index INTEGER,
-            spent_height INTEGER,
-            FOREIGN KEY (tx_id) REFERENCES transactions(tx_id)
+            spent_height INTEGER
         );
 
         CREATE INDEX IF NOT EXISTS idx_boxes_address ON boxes(address);
@@ -80,8 +80,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             box_id VARCHAR(64) NOT NULL,
             token_id VARCHAR(64) NOT NULL,
             amount BIGINT NOT NULL,
-            asset_index INTEGER NOT NULL,
-            FOREIGN KEY (box_id) REFERENCES boxes(box_id)
+            asset_index INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_box_assets_box ON box_assets(box_id);
@@ -96,22 +95,19 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             description TEXT,
             token_type VARCHAR(64),
             decimals INTEGER,
-            creation_height INTEGER NOT NULL,
-            FOREIGN KEY (box_id) REFERENCES boxes(box_id)
+            creation_height INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_tokens_name ON tokens(name);
         CREATE INDEX IF NOT EXISTS idx_tokens_height ON tokens(creation_height);
 
         -- Inputs table (for tracking spending)
-        -- NOTE: No FK on box_id - boxes may be created in different blocks processed out of order
         CREATE TABLE IF NOT EXISTS inputs (
             id BIGINT PRIMARY KEY,
             tx_id VARCHAR(64) NOT NULL,
             box_id VARCHAR(64) NOT NULL,
             input_index INTEGER NOT NULL,
-            proof_bytes TEXT,
-            FOREIGN KEY (tx_id) REFERENCES transactions(tx_id)
+            proof_bytes TEXT
         );
 
         CREATE INDEX IF NOT EXISTS idx_inputs_tx ON inputs(tx_id);
@@ -122,8 +118,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             id BIGINT PRIMARY KEY,
             tx_id VARCHAR(64) NOT NULL,
             box_id VARCHAR(64) NOT NULL,
-            input_index INTEGER NOT NULL,
-            FOREIGN KEY (tx_id) REFERENCES transactions(tx_id)
+            input_index INTEGER NOT NULL
         );
 
         CREATE INDEX IF NOT EXISTS idx_data_inputs_tx ON data_inputs(tx_id);
