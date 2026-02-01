@@ -232,11 +232,15 @@ async function postApi(endpoint, data) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(data)
         });
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return await res.json();
+        const json = await res.json();
+        if (!res.ok) {
+            console.error(`API error: ${endpoint}`, res.status, json);
+            return json; // Return the error response so caller can see error details
+        }
+        return json;
     } catch (e) {
         console.error(`API error: ${endpoint}`, e);
-        return null;
+        return { success: false, error: e.message };
     }
 }
 
@@ -801,12 +805,13 @@ async function unlockWallet() {
     }
 
     const result = await postApi('/wallet/unlock', { pass: password });
-    if (result && result.success !== false) {
+    if (result && result.success === true) {
         // Set session as unlocked
         walletSessionUnlocked = true;
         loadWalletData();
     } else {
-        alert('Failed to unlock wallet. Check your password.');
+        const errorMsg = result?.error || 'Unknown error';
+        alert(`Failed to unlock wallet: ${errorMsg}`);
     }
 }
 
