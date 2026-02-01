@@ -420,12 +420,37 @@ async function loadStatusData() {
         ? formatDuration(status.sync.etaSeconds)
         : '-';
 
-    // Nodes
+    // Primary Node Info (first connected node)
+    const primaryNode = status.sync.connectedNodes.find(n => n.connected) || status.sync.connectedNodes[0];
+    if (primaryNode) {
+        document.getElementById('node-version').textContent = primaryNode.appVersion || '-';
+        document.getElementById('node-state-type').textContent = primaryNode.stateType || '-';
+        document.getElementById('node-headers-height').textContent = primaryNode.headersHeight
+            ? formatNumber(primaryNode.headersHeight)
+            : '-';
+        document.getElementById('node-max-peer-height').textContent = primaryNode.maxPeerHeight
+            ? formatNumber(primaryNode.maxPeerHeight)
+            : '-';
+        document.getElementById('node-peers').textContent = primaryNode.peersCount ?? '-';
+        document.getElementById('node-mempool').textContent = primaryNode.unconfirmedCount ?? '-';
+        document.getElementById('node-mining').textContent = primaryNode.isMining !== null
+            ? (primaryNode.isMining ? 'Yes' : 'No')
+            : '-';
+        document.getElementById('node-difficulty').textContent = primaryNode.difficulty
+            ? formatLargeDifficulty(primaryNode.difficulty)
+            : '-';
+    }
+
+    // Nodes list
     const nodeList = document.getElementById('node-list');
     nodeList.innerHTML = status.sync.connectedNodes.map(node => `
         <div class="node-item">
-            <span class="node-url">${node.url}</span>
+            <div class="node-url-info">
+                <span class="node-url">${node.url}</span>
+                ${node.appVersion ? `<span class="node-version-tag">${node.appVersion}</span>` : ''}
+            </div>
             <div class="node-status">
+                <span class="node-height-info">${node.height ? formatNumber(node.height) : '-'}</span>
                 <span class="node-latency">${node.latencyMs ? node.latencyMs + 'ms' : '-'}</span>
                 <span class="status-dot ${node.connected ? 'connected' : 'disconnected'}"></span>
             </div>
@@ -446,6 +471,18 @@ async function loadStatusData() {
     document.getElementById('sys-memory').textContent = status.system.memoryUsageMb
         ? `${status.system.memoryUsageMb} MB`
         : '-';
+}
+
+function formatLargeDifficulty(diffStr) {
+    if (!diffStr) return '-';
+    const num = parseFloat(diffStr);
+    if (isNaN(num)) return diffStr;
+    if (num >= 1e15) return (num / 1e15).toFixed(2) + ' P';
+    if (num >= 1e12) return (num / 1e12).toFixed(2) + ' T';
+    if (num >= 1e9) return (num / 1e9).toFixed(2) + ' G';
+    if (num >= 1e6) return (num / 1e6).toFixed(2) + ' M';
+    if (num >= 1e3) return (num / 1e3).toFixed(2) + ' K';
+    return formatNumber(num);
 }
 
 // Wallet page
@@ -498,6 +535,9 @@ async function loadWalletData() {
         if (balances && balances.balance !== undefined) {
             document.getElementById('wallet-balance').textContent =
                 `${nanoErgToErg(balances.balance)} ERG`;
+
+            // Display wallet tokens
+            renderWalletTokens(balances.assets || []);
         }
 
         // Load addresses
@@ -526,6 +566,60 @@ async function loadWalletData() {
         lockedSection.classList.remove('hidden');
         document.getElementById('wallet-unlocked').classList.add('hidden');
     }
+}
+
+// Render wallet token holdings
+function renderWalletTokens(assets) {
+    const container = document.getElementById('wallet-tokens');
+    if (!container) return;
+
+    if (!assets || assets.length === 0) {
+        container.innerHTML = `
+            <div style="text-align:center;color:var(--text-secondary);padding:2rem">
+                <p>No tokens in wallet</p>
+            </div>
+        `;
+        return;
+    }
+
+    container.innerHTML = assets.map(asset => {
+        const tokenId = asset.tokenId;
+        const name = asset.name || truncateId(tokenId, 12);
+        const firstLetter = (asset.name || tokenId || '?')[0].toUpperCase();
+        const amount = formatTokenAmount(asset.amount, asset.decimals || 0);
+        const isNft = asset.amount === 1 && (!asset.decimals || asset.decimals === 0);
+
+        return `
+            <div class="wallet-token-item ${isNft ? 'nft' : ''}" onclick="showTokenDetail('${tokenId}')">
+                <div class="wallet-token-icon">
+                    <img id="wallet-token-img-${tokenId}"
+                         src="data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7"
+                         alt=""
+                         style="display:none;"
+                         onerror="this.style.display='none';">
+                    <span>${firstLetter}</span>
+                </div>
+                <div class="wallet-token-info">
+                    <div class="wallet-token-name">${escapeHtml(name)}</div>
+                    <div class="wallet-token-amount">${isNft ? 'NFT' : amount}</div>
+                </div>
+            </div>
+        `;
+    }).join('');
+
+    // Try to load token images
+    assets.forEach(asset => {
+        const img = document.getElementById(`wallet-token-img-${asset.tokenId}`);
+        if (img) {
+            const token = { id: asset.tokenId, name: asset.name, emissionAmount: asset.amount, decimals: asset.decimals };
+            loadTokenImage(token, img).then(loaded => {
+                if (loaded) {
+                    img.style.display = 'block';
+                    img.nextElementSibling.style.display = 'none';
+                }
+            });
+        }
+    });
 }
 
 // Wallet actions

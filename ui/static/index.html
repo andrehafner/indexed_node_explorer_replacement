@@ -98,26 +98,39 @@
             </div>
 
             <div id="wallet-unlocked" class="wallet-section hidden">
-                <div class="wallet-balance">
-                    <h3>Balance</h3>
-                    <div class="balance-amount" id="wallet-balance">0 ERG</div>
+                <div class="wallet-grid">
+                    <div class="wallet-panel wallet-panel-main">
+                        <div class="wallet-balance-hero">
+                            <div class="balance-label">Total Balance</div>
+                            <div class="balance-amount-large" id="wallet-balance">0 ERG</div>
+                        </div>
+
+                        <div class="wallet-addresses-section">
+                            <h3>Wallet Addresses</h3>
+                            <div id="wallet-address-list" class="address-list"></div>
+                        </div>
+                    </div>
+
+                    <div class="wallet-panel">
+                        <h3>Token Holdings</h3>
+                        <div id="wallet-tokens" class="wallet-tokens-list">
+                            <div class="loading">Loading tokens...</div>
+                        </div>
+                    </div>
                 </div>
 
-                <div class="wallet-addresses">
-                    <h3>Addresses</h3>
-                    <div id="wallet-address-list" class="address-list"></div>
-                </div>
-
-                <div class="wallet-send">
+                <div class="wallet-panel wallet-panel-full">
                     <h3>Send Transaction</h3>
-                    <div class="send-form">
-                        <input type="text" id="send-to" placeholder="Recipient address">
-                        <input type="number" id="send-amount" placeholder="Amount (ERG)">
+                    <div class="send-form-row">
+                        <input type="text" id="send-to" placeholder="Recipient address" class="input-wide">
+                        <input type="number" id="send-amount" placeholder="Amount (ERG)" class="input-amount">
                         <button id="send-btn" class="btn btn-primary">Send</button>
                     </div>
                 </div>
 
-                <button id="lock-btn" class="btn btn-secondary">Lock Wallet</button>
+                <div class="wallet-actions">
+                    <button id="lock-btn" class="btn btn-secondary">Lock Wallet</button>
+                </div>
             </div>
         </div>
 
@@ -136,7 +149,7 @@
                     </div>
                     <div class="sync-details">
                         <div class="sync-item">
-                            <span class="label">Local Height:</span>
+                            <span class="label">Indexed Height:</span>
                             <span class="value" id="local-height">-</span>
                         </div>
                         <div class="sync-item">
@@ -154,13 +167,51 @@
                     </div>
                 </div>
 
+                <div class="status-panel status-panel-wide">
+                    <h3>Primary Node Info</h3>
+                    <div class="node-info-grid" id="primary-node-info">
+                        <div class="node-info-item">
+                            <span class="label">Node Version:</span>
+                            <span class="value" id="node-version">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">State Type:</span>
+                            <span class="value" id="node-state-type">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Headers Height:</span>
+                            <span class="value" id="node-headers-height">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Max Peer Height:</span>
+                            <span class="value" id="node-max-peer-height">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Connected Peers:</span>
+                            <span class="value" id="node-peers">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Mempool Size:</span>
+                            <span class="value" id="node-mempool">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Mining:</span>
+                            <span class="value" id="node-mining">-</span>
+                        </div>
+                        <div class="node-info-item">
+                            <span class="label">Difficulty:</span>
+                            <span class="value" id="node-difficulty">-</span>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="status-panel">
                     <h3>Connected Nodes</h3>
                     <div id="node-list" class="node-list"></div>
                 </div>
 
                 <div class="status-panel">
-                    <h3>Database</h3>
+                    <h3>Indexed Database</h3>
                     <div class="db-stats">
                         <div class="db-item">
                             <span class="label">Blocks:</span>
@@ -179,17 +230,17 @@
                             <span class="value" id="db-tokens">-</span>
                         </div>
                         <div class="db-item">
-                            <span class="label">Size:</span>
+                            <span class="label">DB Size:</span>
                             <span class="value" id="db-size">-</span>
                         </div>
                     </div>
                 </div>
 
                 <div class="status-panel">
-                    <h3>System</h3>
+                    <h3>Indexer</h3>
                     <div class="sys-stats">
                         <div class="sys-item">
-                            <span class="label">Version:</span>
+                            <span class="label">Indexer Version:</span>
                             <span class="value" id="sys-version">-</span>
                         </div>
                         <div class="sys-item">
