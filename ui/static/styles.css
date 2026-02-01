@@ -13,6 +13,7 @@
     --text-secondary: #8b949e;
     --accent-primary: #ff6b35;
     --accent-secondary: #00d4aa;
+    --accent-nft: #9b59b6;
     --border-color: #30363d;
     --success: #3fb950;
     --warning: #d29922;
@@ -320,6 +321,11 @@ body {
     background-color: var(--border-color);
 }
 
+.btn-small {
+    padding: 0.4rem 0.8rem;
+    font-size: 0.75rem;
+}
+
 .balance-amount {
     font-size: 2rem;
     font-weight: 600;
@@ -561,6 +567,516 @@ body {
     text-decoration: underline;
 }
 
+/* ===== TOKEN & NFT STYLES ===== */
+
+/* Token Hero Section */
+.token-hero {
+    display: flex;
+    gap: 1.5rem;
+    margin-bottom: 2rem;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+}
+
+.token-icon-box {
+    width: 80px;
+    height: 80px;
+    border-radius: 12px;
+    background-color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+    flex-shrink: 0;
+    overflow: hidden;
+}
+
+.token-icon-box img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.token-info {
+    flex: 1;
+    min-width: 0;
+}
+
+.token-name-row {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    margin-bottom: 0.5rem;
+}
+
+.token-name {
+    font-size: 1.5rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.badge {
+    padding: 0.25rem 0.75rem;
+    border-radius: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.badge-nft {
+    background-color: rgba(155, 89, 182, 0.2);
+    color: var(--accent-nft);
+    border: 1px solid var(--accent-nft);
+}
+
+.badge-token {
+    background-color: rgba(0, 212, 170, 0.2);
+    color: var(--accent-secondary);
+    border: 1px solid var(--accent-secondary);
+}
+
+.token-id-row {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.token-id {
+    font-family: monospace;
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+    word-break: break-all;
+}
+
+.copy-btn {
+    background: none;
+    border: none;
+    color: var(--text-secondary);
+    cursor: pointer;
+    padding: 0.25rem;
+    font-size: 0.875rem;
+}
+
+.copy-btn:hover {
+    color: var(--accent-primary);
+}
+
+.token-description {
+    margin-top: 0.75rem;
+    color: var(--text-secondary);
+    font-size: 0.875rem;
+    line-height: 1.5;
+}
+
+/* NFT Image Preview */
+.nft-preview {
+    margin-bottom: 1.5rem;
+    border-radius: 12px;
+    overflow: hidden;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+}
+
+.nft-image-container {
+    position: relative;
+    width: 100%;
+    min-height: 200px;
+    max-height: 400px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--bg-primary);
+}
+
+.nft-image-container img {
+    max-width: 100%;
+    max-height: 400px;
+    object-fit: contain;
+}
+
+.nft-image-container.loading::after {
+    content: '';
+    position: absolute;
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--border-color);
+    border-top-color: var(--accent-nft);
+    border-radius: 50%;
+    animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+.nft-loading-text {
+    position: absolute;
+    bottom: 1rem;
+    left: 50%;
+    transform: translateX(-50%);
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.7);
+    padding: 0.25rem 0.75rem;
+    border-radius: 4px;
+}
+
+.nft-footer {
+    padding: 0.75rem 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    border-top: 1px solid var(--border-color);
+}
+
+.nft-source {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.nft-actions {
+    display: flex;
+    gap: 0.5rem;
+}
+
+/* Token Cards Grid */
+.token-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.token-card {
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 8px;
+    padding: 1rem;
+    cursor: pointer;
+    transition: all 0.2s;
+    display: flex;
+    gap: 1rem;
+    align-items: center;
+}
+
+.token-card:hover {
+    border-color: var(--accent-primary);
+    transform: translateY(-2px);
+}
+
+.token-card.nft {
+    border-color: rgba(155, 89, 182, 0.3);
+}
+
+.token-card.nft:hover {
+    border-color: var(--accent-nft);
+}
+
+.token-card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    background-color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    overflow: hidden;
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--accent-primary);
+}
+
+.token-card-icon img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.token-card.nft .token-card-icon {
+    color: var(--accent-nft);
+}
+
+.token-card-info {
+    flex: 1;
+    min-width: 0;
+    overflow: hidden;
+}
+
+.token-card-name {
+    font-weight: 500;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.token-card-amount {
+    font-size: 0.875rem;
+    color: var(--accent-secondary);
+    font-family: monospace;
+}
+
+.token-card.nft .token-card-amount {
+    color: var(--accent-nft);
+}
+
+.token-card-id {
+    font-size: 0.7rem;
+    color: var(--text-secondary);
+    font-family: monospace;
+    margin-top: 0.25rem;
+}
+
+/* NFT Gallery Grid */
+.nft-gallery {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+    gap: 1rem;
+    margin-bottom: 1.5rem;
+}
+
+.nft-thumb {
+    background-color: var(--bg-tertiary);
+    border: 1px solid rgba(155, 89, 182, 0.3);
+    border-radius: 8px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.nft-thumb:hover {
+    border-color: var(--accent-nft);
+    transform: translateY(-2px);
+}
+
+.nft-thumb-image {
+    width: 100%;
+    aspect-ratio: 1;
+    background-color: var(--bg-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.nft-thumb-image img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.nft-thumb-image .placeholder {
+    font-size: 2rem;
+    color: var(--accent-nft);
+    opacity: 0.5;
+}
+
+.nft-thumb-info {
+    padding: 0.75rem;
+}
+
+.nft-thumb-name {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Address Balance Display */
+.address-balance-hero {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 1.5rem;
+    background: linear-gradient(135deg, var(--bg-tertiary) 0%, var(--bg-secondary) 100%);
+    border-radius: 12px;
+    border: 1px solid var(--border-color);
+    margin-bottom: 1.5rem;
+}
+
+.address-balance-erg {
+    font-size: 2rem;
+    font-weight: 600;
+    color: var(--accent-secondary);
+}
+
+.address-balance-usd {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    margin-top: 0.25rem;
+}
+
+.address-stats-mini {
+    display: flex;
+    gap: 2rem;
+}
+
+.address-stat {
+    text-align: center;
+}
+
+.address-stat-value {
+    font-size: 1.25rem;
+    font-weight: 600;
+    color: var(--text-primary);
+}
+
+.address-stat-label {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+/* Transaction Item with Net Change */
+.tx-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 0.75rem;
+    border-bottom: 1px solid var(--border-color);
+    cursor: pointer;
+    transition: background-color 0.2s;
+}
+
+.tx-item:hover {
+    background-color: var(--bg-tertiary);
+}
+
+.tx-item:last-child {
+    border-bottom: none;
+}
+
+.tx-item-left {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+
+.tx-item-id {
+    font-family: monospace;
+    font-size: 0.875rem;
+    color: var(--accent-primary);
+}
+
+.tx-item-time {
+    font-size: 0.75rem;
+    color: var(--text-secondary);
+}
+
+.tx-item-amount {
+    font-family: monospace;
+    font-weight: 500;
+}
+
+.tx-item-amount.positive {
+    color: var(--success);
+}
+
+.tx-item-amount.positive::before {
+    content: '+';
+}
+
+.tx-item-amount.negative {
+    color: var(--error);
+}
+
+/* Tokens Page */
+.tokens-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1.5rem;
+}
+
+.tokens-filters {
+    display: flex;
+    gap: 0.5rem;
+}
+
+.filter-btn {
+    padding: 0.5rem 1rem;
+    border: 1px solid var(--border-color);
+    background-color: var(--bg-secondary);
+    color: var(--text-secondary);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s;
+}
+
+.filter-btn:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+.filter-btn.active {
+    background-color: var(--accent-primary);
+    border-color: var(--accent-primary);
+    color: white;
+}
+
+.filter-btn.nft.active {
+    background-color: var(--accent-nft);
+    border-color: var(--accent-nft);
+}
+
+/* External Links */
+.external-links {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.external-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.4rem 0.8rem;
+    background-color: var(--bg-tertiary);
+    border: 1px solid var(--border-color);
+    border-radius: 4px;
+    color: var(--text-secondary);
+    text-decoration: none;
+    font-size: 0.75rem;
+    transition: all 0.2s;
+}
+
+.external-link:hover {
+    border-color: var(--accent-primary);
+    color: var(--text-primary);
+}
+
+/* Section Headers */
+.section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 1rem;
+}
+
+.section-title {
+    font-size: 1rem;
+    color: var(--text-secondary);
+    font-weight: 500;
+}
+
+.section-count {
+    font-size: 0.875rem;
+    color: var(--text-secondary);
+    background-color: var(--bg-tertiary);
+    padding: 0.25rem 0.5rem;
+    border-radius: 4px;
+}
+
 /* Footer */
 .footer {
     padding: 1rem 2rem;
@@ -592,6 +1108,29 @@ body {
 
     .content-grid {
         grid-template-columns: 1fr;
+    }
+
+    .token-hero {
+        flex-direction: column;
+        text-align: center;
+    }
+
+    .token-icon-box {
+        margin: 0 auto;
+    }
+
+    .address-balance-hero {
+        flex-direction: column;
+        gap: 1rem;
+        text-align: center;
+    }
+
+    .token-cards-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .nft-gallery {
+        grid-template-columns: repeat(2, 1fr);
     }
 }
 
