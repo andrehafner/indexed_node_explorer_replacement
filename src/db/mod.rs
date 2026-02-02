@@ -30,19 +30,23 @@ impl Database {
     pub fn new(path: &str) -> Result<Self> {
         let conn = Connection::open(path).context("Failed to open database")?;
 
-        // Get memory limit from environment or default to 4GB
+        // Get settings from environment or use defaults
         let memory_limit = std::env::var("DUCKDB_MEMORY_LIMIT")
             .unwrap_or_else(|_| "4GB".to_string());
+        let threads = std::env::var("DUCKDB_THREADS")
+            .unwrap_or_else(|_| "4".to_string());
+
+        tracing::info!("DuckDB config: threads={}, memory_limit={}", threads, memory_limit);
 
         // Enable optimizations for faster writes
         conn.execute_batch(&format!(
-            "SET threads=4;
+            "SET threads={};
              SET memory_limit='{}';
              SET preserve_insertion_order=false;
              SET checkpoint_threshold='512MB';
              SET wal_autocheckpoint='512MB';
              PRAGMA enable_progress_bar=false;",
-            memory_limit
+            threads, memory_limit
         ))?;
 
         Ok(Self {

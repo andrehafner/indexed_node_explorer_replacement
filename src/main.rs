@@ -89,6 +89,7 @@ async fn main() -> Result<()> {
     tracing::info!("Nodes: {}", config.nodes);
     tracing::info!("Database: {}", config.database);
     tracing::info!("Network: {}", config.network);
+    tracing::info!("Sync batch size: {} blocks", config.sync_batch_size);
 
     // Ensure data directory exists
     if let Some(parent) = std::path::Path::new(&config.database).parent() {
