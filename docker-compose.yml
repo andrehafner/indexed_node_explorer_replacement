@@ -29,11 +29,13 @@ services:
       - NODE_API_KEY=${NODE_API_KEY:-}
       # Database
       - DATABASE_PATH=/app/data/ergo-index.duckdb
+      - DUCKDB_MEMORY_LIMIT=${DUCKDB_MEMORY_LIMIT:-4GB}
+      - DUCKDB_THREADS=${DUCKDB_THREADS:-4}
       # Server
       - PORT=8080
       - HOST=0.0.0.0
       # Sync settings
-      - SYNC_BATCH_SIZE=${SYNC_BATCH_SIZE:-100}
+      - SYNC_BATCH_SIZE=${SYNC_BATCH_SIZE:-50}
       - SYNC_INTERVAL=${SYNC_INTERVAL:-10}
       # Network
       - NETWORK=${NETWORK:-mainnet}
