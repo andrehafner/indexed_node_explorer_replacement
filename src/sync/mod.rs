@@ -13,8 +13,13 @@ use crate::db::Database;
 pub use node_client::NodeClient;
 use processor::BlockProcessor;
 
-/// Maximum concurrent HTTP requests to nodes
-const MAX_CONCURRENT_FETCHES: usize = 10;
+/// Maximum concurrent HTTP requests to nodes (configurable via SYNC_CONCURRENT_FETCHES)
+fn max_concurrent_fetches() -> usize {
+    std::env::var("SYNC_CONCURRENT_FETCHES")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(20)
+}
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -162,8 +167,15 @@ impl SyncService {
             total_blocks
         );
 
+        // Checkpoint frequency: checkpoint every N batches (configurable via SYNC_CHECKPOINT_INTERVAL)
+        let checkpoint_interval: usize = std::env::var("SYNC_CHECKPOINT_INTERVAL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
         // Sync in batches with parallel fetching across nodes
         let mut current_height = start_height;
+        let mut batch_count: usize = 0;
 
         while current_height <= end_height {
             let batch_end = std::cmp::min(current_height + self.batch_size as i64 - 1, end_height);
@@ -181,9 +193,13 @@ impl SyncService {
             }
             drop(processor);
 
-            // Force checkpoint to flush to disk and free memory
-            if let Err(e) = self.db.checkpoint() {
-                tracing::warn!("Checkpoint failed: {}", e);
+            batch_count += 1;
+
+            // Checkpoint periodically to flush to disk and free memory
+            if batch_count % checkpoint_interval == 0 {
+                if let Err(e) = self.db.checkpoint() {
+                    tracing::warn!("Checkpoint failed: {}", e);
+                }
             }
 
             self.blocks_synced
@@ -198,6 +214,11 @@ impl SyncService {
             );
 
             current_height = batch_end + 1;
+        }
+
+        // Final checkpoint at end of sync
+        if let Err(e) = self.db.checkpoint() {
+            tracing::warn!("Final checkpoint failed: {}", e);
         }
 
         self.is_syncing.store(false, Ordering::SeqCst);
@@ -270,7 +291,7 @@ impl SyncService {
         let num_nodes = self.nodes.len();
 
         // Use a semaphore to limit concurrent requests
-        let semaphore = Arc::new(Semaphore::new(MAX_CONCURRENT_FETCHES));
+        let semaphore = Arc::new(Semaphore::new(max_concurrent_fetches()));
 
         // Create tasks with concurrency control
         let tasks: Vec<_> = heights
@@ -315,7 +336,7 @@ impl SyncService {
         // Execute with controlled concurrency using buffered stream
         let results: Vec<Result<(i64, serde_json::Value), anyhow::Error>> =
             stream::iter(tasks)
-                .buffer_unordered(MAX_CONCURRENT_FETCHES)
+                .buffer_unordered(max_concurrent_fetches())
                 .collect()
                 .await;
 
