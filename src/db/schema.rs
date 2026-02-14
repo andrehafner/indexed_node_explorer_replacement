@@ -14,7 +14,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             block_coins BIGINT NOT NULL,
             block_mining_time BIGINT,
             tx_count INTEGER NOT NULL,
-            miner_address VARCHAR(64),
+            miner_address TEXT,
             miner_reward BIGINT NOT NULL,
             miner_name VARCHAR(128),
             main_chain BOOLEAN NOT NULL DEFAULT TRUE,
@@ -55,7 +55,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
             output_index INTEGER NOT NULL,
             ergo_tree TEXT NOT NULL,
             ergo_tree_template_hash VARCHAR(64) NOT NULL,
-            address VARCHAR(64) NOT NULL,
+            address TEXT NOT NULL,
             value BIGINT NOT NULL,
             creation_height INTEGER NOT NULL,
             settlement_height INTEGER NOT NULL,
@@ -126,7 +126,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
 
         -- Address statistics (materialized)
         CREATE TABLE IF NOT EXISTS address_stats (
-            address VARCHAR(64) PRIMARY KEY,
+            address TEXT PRIMARY KEY,
             tx_count INTEGER NOT NULL DEFAULT 0,
             balance BIGINT NOT NULL DEFAULT 0,
             first_seen_height INTEGER,
@@ -179,7 +179,7 @@ pub const MIGRATIONS: &[(&str, &str)] = &[
         -- Token holders view (materialized as table for performance)
         CREATE TABLE IF NOT EXISTS token_holders (
             token_id VARCHAR(64) NOT NULL,
-            address VARCHAR(64) NOT NULL,
+            address TEXT NOT NULL,
             amount BIGINT NOT NULL,
             PRIMARY KEY (token_id, address)
         );
