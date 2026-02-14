@@ -475,14 +475,12 @@ impl BlockProcessor {
         let additional_registers = output.get("additionalRegisters");
         let assets = output.get("assets").and_then(|v| v.as_array());
 
-        // Use address from node if available, otherwise derive from ErgoTree
-        let address = output.get("address")
-            .and_then(|v| v.as_str())
-            .map(|s| s.to_string())
-            .unwrap_or_else(|| {
-                ergo_tree::ergo_tree_to_address(ergo_tree_hex)
-                    .unwrap_or_else(|| ergo_tree_hex.to_string())
-            });
+        // Always derive address from ErgoTree to ensure consistent P2S encoding.
+        // The Ergo node uses P2SH (short hash) for scripts > 255 bytes, but the
+        // official Ergo Explorer always uses P2S (full script), so we must derive
+        // addresses ourselves to match.
+        let address = ergo_tree::ergo_tree_to_address(ergo_tree_hex)
+            .unwrap_or_else(|| ergo_tree_hex.to_string());
         let template_hash = Some(ergo_tree::ergo_tree_template_hash(ergo_tree_hex));
 
         self.global_box_index += 1;
