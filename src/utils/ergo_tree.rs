@@ -7,13 +7,13 @@ use blake2::{Blake2b, Digest, digest::consts::U32};
 
 type Blake2b256 = Blake2b<U32>;
 
-const MAINNET_P2PK_PREFIX: u8 = 0x01;  // P2PK address
-const MAINNET_P2S_PREFIX: u8 = 0x02;   // P2S address
-const MAINNET_P2SH_PREFIX: u8 = 0x03;  // P2SH address
+const MAINNET_P2PK_PREFIX: u8 = 0x01;  // P2PK address (network 0x00 + type 0x01)
+const MAINNET_P2SH_PREFIX: u8 = 0x02;  // P2SH address (network 0x00 + type 0x02)
+const MAINNET_P2S_PREFIX: u8 = 0x03;   // P2S address  (network 0x00 + type 0x03)
 
-const TESTNET_P2PK_PREFIX: u8 = 0x11;
-const TESTNET_P2S_PREFIX: u8 = 0x12;
-const TESTNET_P2SH_PREFIX: u8 = 0x13;
+const TESTNET_P2PK_PREFIX: u8 = 0x11;  // network 0x10 + type 0x01
+const TESTNET_P2SH_PREFIX: u8 = 0x12;  // network 0x10 + type 0x02
+const TESTNET_P2S_PREFIX: u8 = 0x13;   // network 0x10 + type 0x03
 
 /// Base58 alphabet used by Ergo
 const BASE58_ALPHABET: &[u8] = b"123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
@@ -192,17 +192,27 @@ mod tests {
     }
 
     #[test]
-    fn test_p2s_address_uses_full_tree() {
-        // P2S addresses must use the full ErgoTree bytes, not a hash.
-        // A non-P2PK ErgoTree should produce a P2S address that is longer
-        // than 51 chars (since it embeds the full script, not just a 32-byte hash).
+    fn test_p2s_address_known_vector() {
+        // Test vector from sigma-rust reference implementation
         let ergo_tree = "100204a00b08cd021dde34603426402615658f1d970cfa7c7bd92ac81a8b16eeebff264d59ce4604ea02d192a39a8cc7a70173007301";
         let address = ergo_tree_to_address(ergo_tree).unwrap();
-        // P2S addresses embedding 51+ bytes of script will be much longer than P2PK (51 chars)
-        assert!(address.len() > 51, "P2S address should be longer than P2PK, got len={}", address.len());
-        // Verify deterministic - same input always produces same output
-        let address2 = ergo_tree_to_address(ergo_tree).unwrap();
-        assert_eq!(address, address2);
+        assert_eq!(
+            address,
+            "88dhgzEuTXaQLG2u9aud6SkPCGyXvw8mQWLCWfkv6wwuC9X9gdzELR9mt2hHQaM654aamzscP8r45NsJ",
+            "P2S address must match sigma-rust reference"
+        );
+    }
+
+    #[test]
+    fn test_p2s_miners_fee_address() {
+        // Miners fee ErgoTree - known test vector from sigma-rust
+        let ergo_tree = "1005040004000e36100204a00b08cd0279be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798ea02d192a39a8cc7a701730073011001020402d19683030193a38cc7b2a57300000193c2b2a57301007473027303830108cdeeac93b1a57304";
+        let address = ergo_tree_to_address(ergo_tree).unwrap();
+        assert_eq!(
+            address,
+            "2iHkR7CWvD1R4j1yZg5bkeDRQavjAaVPeTDFGGLZduHyfWMuYpmhHocX8GJoaieTx78FntzJbCBVL6rf96ocJoZdmWBL2fci7NqWgAirppPQmZ7fN9V6z13Ay6brPriBKYqLp1bT2Fk4FkFLCfdPpe",
+            "Miners fee P2S address must match sigma-rust reference"
+        );
     }
 
     #[test]
