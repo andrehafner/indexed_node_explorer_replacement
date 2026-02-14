@@ -52,16 +52,16 @@ fn encode_p2pk_address(pk: &[u8], mainnet: bool) -> String {
 }
 
 /// Encode a P2S address from ErgoTree bytes
+///
+/// P2S addresses use the full ErgoTree bytes directly (not a hash).
+/// Format: prefix_byte || ergo_tree_bytes || checksum(4 bytes)
 fn encode_p2s_address(tree: &[u8], mainnet: bool) -> String {
     let prefix = if mainnet { MAINNET_P2S_PREFIX } else { TESTNET_P2S_PREFIX };
 
-    // Hash the tree with blake2b256
-    let tree_hash = blake2b256(tree);
-
     let mut content = vec![prefix];
-    content.extend_from_slice(&tree_hash);
+    content.extend_from_slice(tree);
 
-    // Add checksum
+    // Add checksum (first 4 bytes of blake2b256 of content)
     let checksum = blake2b256_checksum(&content);
     content.extend_from_slice(&checksum);
 
@@ -155,8 +155,8 @@ pub fn miner_pk_to_address(miner_pk: &str) -> Option<String> {
 
 /// Validate an Ergo address
 pub fn validate_address(address: &str) -> bool {
-    // Check length
-    if address.len() < 30 || address.len() > 60 {
+    // P2PK addresses are ~51 chars, P2S addresses can be hundreds of chars
+    if address.len() < 30 {
         return false;
     }
 
@@ -192,8 +192,24 @@ mod tests {
     }
 
     #[test]
+    fn test_p2s_address_uses_full_tree() {
+        // P2S addresses must use the full ErgoTree bytes, not a hash.
+        // A non-P2PK ErgoTree should produce a P2S address that is longer
+        // than 51 chars (since it embeds the full script, not just a 32-byte hash).
+        let ergo_tree = "100204a00b08cd021dde34603426402615658f1d970cfa7c7bd92ac81a8b16eeebff264d59ce4604ea02d192a39a8cc7a70173007301";
+        let address = ergo_tree_to_address(ergo_tree).unwrap();
+        // P2S addresses embedding 51+ bytes of script will be much longer than P2PK (51 chars)
+        assert!(address.len() > 51, "P2S address should be longer than P2PK, got len={}", address.len());
+        // Verify deterministic - same input always produces same output
+        let address2 = ergo_tree_to_address(ergo_tree).unwrap();
+        assert_eq!(address, address2);
+    }
+
+    #[test]
     fn test_validate_address() {
         assert!(validate_address("9fRAWhdxEsTcdb8PhGNrZfwqa65zfkuYHAMmkQLcic1gdLSV5vA"));
+        // P2S addresses can be very long
+        assert!(validate_address("BxKBaHkvrTvLZrDcZjcsxsF7aSsrN73ijeFZXtbj4CXZHHcvBtqSxQ"));
         assert!(!validate_address("invalid"));
         assert!(!validate_address("0invalid"));
     }
