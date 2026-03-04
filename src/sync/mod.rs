@@ -32,6 +32,10 @@ pub struct SyncStatus {
     pub blocks_per_second: f64,
     pub eta_seconds: Option<i64>,
     pub last_block_time: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repair_height: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub repair_total_height: Option<i64>,
     pub connected_nodes: Vec<NodeStatus>,
     pub error: Option<String>,
 }
@@ -68,6 +72,8 @@ pub struct SyncService {
     node_height: AtomicI64,
     blocks_synced: AtomicU64,
     sync_start_time: AtomicU64,
+    repair_height: AtomicI64,
+    repair_total_height: AtomicI64,
     last_error: RwLock<Option<String>>,
     node_statuses: RwLock<Vec<NodeStatus>>,
 }
@@ -111,6 +117,8 @@ impl SyncService {
             is_syncing: AtomicBool::new(false),
             is_repairing: AtomicBool::new(false),
             local_height: AtomicI64::new(-1),
+            repair_height: AtomicI64::new(0),
+            repair_total_height: AtomicI64::new(0),
             node_height: AtomicI64::new(0),
             blocks_synced: AtomicU64::new(0),
             sync_start_time: AtomicU64::new(0),
@@ -399,14 +407,27 @@ impl SyncService {
         let error = self.last_error.read().await.clone();
         let connected_nodes = self.node_statuses.read().await.clone();
 
+        let is_repairing = self.is_repairing.load(Ordering::SeqCst);
+
+        let (repair_height, repair_total_height) = if is_repairing {
+            (
+                Some(self.repair_height.load(Ordering::SeqCst)),
+                Some(self.repair_total_height.load(Ordering::SeqCst)),
+            )
+        } else {
+            (None, None)
+        };
+
         SyncStatus {
             is_syncing,
-            is_repairing: self.is_repairing.load(Ordering::SeqCst),
+            is_repairing,
             local_height,
             node_height,
             sync_progress,
             blocks_per_second,
             eta_seconds,
+            repair_height,
+            repair_total_height,
             last_block_time: None, // TODO: track this
             connected_nodes,
             error,
@@ -440,6 +461,8 @@ impl SyncService {
         );
 
         let max_height = self.db.get_sync_height()?;
+        self.repair_height.store(0, Ordering::SeqCst);
+        self.repair_total_height.store(max_height, Ordering::SeqCst);
         tracing::info!("Starting asset repair for {} blocks", max_height);
 
         // Delete only the affected tables
@@ -575,6 +598,7 @@ impl SyncService {
 
             let blocks_done = (batch_end - current_height + 1) as u64;
             self.blocks_synced.fetch_add(blocks_done, Ordering::SeqCst);
+            self.repair_height.store(batch_end, Ordering::SeqCst);
 
             let progress = batch_end as f64 / max_height as f64;
             if batch_count % 50 == 0 {
