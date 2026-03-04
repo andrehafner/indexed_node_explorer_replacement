@@ -6,7 +6,7 @@ use axum::{
 use duckdb::params;
 use std::sync::Arc;
 
-use crate::models::{AddressInfo, Balance, PaginatedResponse, Pagination, TokenBalance, TransactionSummary};
+use crate::models::{AddressInfo, Balance, BalanceResponse, PaginatedResponse, Pagination, TokenBalance, TransactionSummary};
 use crate::AppState;
 
 /// GET /api/v1/addresses/:address - Get address info
@@ -61,12 +61,12 @@ pub async fn get_address(
     let tokens = state
         .db
         .query_all(
-            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals
+            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals, t.token_type
              FROM box_assets ba
              JOIN boxes b ON ba.box_id = b.box_id
              LEFT JOIN tokens t ON ba.token_id = t.token_id
              WHERE b.address = ? AND b.spent_tx_id IS NULL
-             GROUP BY ba.token_id, t.name, t.decimals
+             GROUP BY ba.token_id, t.name, t.decimals, t.token_type
              ORDER BY total DESC",
             [&address],
             |row| {
@@ -75,6 +75,7 @@ pub async fn get_address(
                     amount: row.get(1)?,
                     name: row.get(2)?,
                     decimals: row.get(3)?,
+                    token_type: row.get(4)?,
                 })
             },
         )
@@ -98,7 +99,7 @@ pub async fn get_address(
 pub async fn get_balance_total(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
-) -> Result<Json<Balance>, (StatusCode, String)> {
+) -> Result<Json<BalanceResponse>, (StatusCode, String)> {
     let nano_ergs: i64 = state
         .db
         .query_one(
@@ -113,12 +114,12 @@ pub async fn get_balance_total(
     let tokens = state
         .db
         .query_all(
-            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals
+            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals, t.token_type
              FROM box_assets ba
              JOIN boxes b ON ba.box_id = b.box_id
              LEFT JOIN tokens t ON ba.token_id = t.token_id
              WHERE b.address = ? AND b.spent_tx_id IS NULL
-             GROUP BY ba.token_id, t.name, t.decimals
+             GROUP BY ba.token_id, t.name, t.decimals, t.token_type
              ORDER BY total DESC",
             [&address],
             |row| {
@@ -127,19 +128,26 @@ pub async fn get_balance_total(
                     amount: row.get(1)?,
                     name: row.get(2)?,
                     decimals: row.get(3)?,
+                    token_type: row.get(4)?,
                 })
             },
         )
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok(Json(Balance { nano_ergs, tokens }))
+    Ok(Json(BalanceResponse {
+        confirmed: Balance { nano_ergs, tokens },
+        unconfirmed: Balance {
+            nano_ergs: 0,
+            tokens: vec![],
+        },
+    }))
 }
 
 /// GET /api/v1/addresses/:address/balance/confirmed - Get confirmed balance
 pub async fn get_balance_confirmed(
     State(state): State<Arc<AppState>>,
     Path(address): Path<String>,
-) -> Result<Json<Balance>, (StatusCode, String)> {
+) -> Result<Json<BalanceResponse>, (StatusCode, String)> {
     // For now, same as total (we're not tracking mempool separately)
     get_balance_total(State(state), Path(address)).await
 }
