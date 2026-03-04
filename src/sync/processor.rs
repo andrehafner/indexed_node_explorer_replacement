@@ -743,6 +743,11 @@ struct AddressData {
     height: i64,
 }
 
+/// Public wrapper for repair use
+pub fn extract_token_metadata_pub(registers: Option<&serde_json::Value>) -> (Option<String>, Option<String>, Option<String>, Option<i32>) {
+    extract_token_metadata(registers)
+}
+
 /// Extract token metadata from box registers
 /// Returns (name, description, token_type, decimals)
 fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<String>, Option<String>, Option<i32>) {

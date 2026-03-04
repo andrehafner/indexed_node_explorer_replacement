@@ -25,6 +25,7 @@ fn max_concurrent_fetches() -> usize {
 #[serde(rename_all = "camelCase")]
 pub struct SyncStatus {
     pub is_syncing: bool,
+    pub is_repairing: bool,
     pub local_height: i64,
     pub node_height: i64,
     pub sync_progress: f64,
@@ -62,6 +63,7 @@ pub struct SyncService {
 
     // Sync state
     is_syncing: AtomicBool,
+    is_repairing: AtomicBool,
     local_height: AtomicI64,
     node_height: AtomicI64,
     blocks_synced: AtomicU64,
@@ -107,6 +109,7 @@ impl SyncService {
             db,
             batch_size,
             is_syncing: AtomicBool::new(false),
+            is_repairing: AtomicBool::new(false),
             local_height: AtomicI64::new(-1),
             node_height: AtomicI64::new(0),
             blocks_synced: AtomicU64::new(0),
@@ -130,6 +133,11 @@ impl SyncService {
     }
 
     async fn sync_once(&self) -> Result<()> {
+        // Skip normal sync while repair is running
+        if self.is_repairing.load(Ordering::SeqCst) {
+            return Ok(());
+        }
+
         // Check node health and get best height
         let (_best_node_idx, node_height) = self.find_best_node().await?;
 
@@ -393,6 +401,7 @@ impl SyncService {
 
         SyncStatus {
             is_syncing,
+            is_repairing: self.is_repairing.load(Ordering::SeqCst),
             local_height,
             node_height,
             sync_progress,
@@ -408,14 +417,18 @@ impl SyncService {
         self.nodes.first()
     }
 
-    /// Repair box_assets, inputs, and data_inputs tables by clearing and re-processing all blocks.
-    /// This fixes data loss caused by the counter initialization bug where synthetic IDs
-    /// would collide after process restarts.
+    /// Repair box_assets and tokens tables by clearing and re-extracting from all blocks.
+    /// Uses a lightweight extraction that ONLY processes assets and tokens — skips all
+    /// block/tx/box/input processing since those tables are intact.
     pub async fn repair_assets(&self) -> Result<()> {
         if self.is_syncing.load(Ordering::SeqCst) {
             anyhow::bail!("Cannot repair while sync is in progress");
         }
+        if self.is_repairing.load(Ordering::SeqCst) {
+            anyhow::bail!("Repair is already in progress");
+        }
 
+        self.is_repairing.store(true, Ordering::SeqCst);
         self.is_syncing.store(true, Ordering::SeqCst);
         self.blocks_synced.store(0, Ordering::SeqCst);
         self.sync_start_time.store(
@@ -427,65 +440,149 @@ impl SyncService {
         );
 
         let max_height = self.db.get_sync_height()?;
-        tracing::info!("Starting asset repair: clearing box_assets, inputs, data_inputs and re-processing {} blocks", max_height);
+        tracing::info!("Starting asset repair for {} blocks", max_height);
 
-        // Delete the tables with the counter bug
+        // Delete only the affected tables
         self.db.execute_batch(
             "DELETE FROM box_assets;
-             DELETE FROM inputs;
-             DELETE FROM data_inputs;
              DELETE FROM tokens;"
         )?;
         self.db.checkpoint()?;
+        tracing::info!("Cleared box_assets and tokens tables. Re-extracting from blocks...");
 
-        tracing::info!("Cleared box_assets, inputs, data_inputs, tokens tables. Re-processing blocks...");
-
-        // Reset processor counters (they'll be 0 since tables are empty)
-        {
-            let mut processor = self.processor.lock().await;
-            *processor = BlockProcessor::new(self.db.clone());
-        }
-
-        let checkpoint_interval: usize = std::env::var("SYNC_CHECKPOINT_INTERVAL")
+        // Use large batches for repair — 100 blocks per batch
+        let repair_batch_size: i64 = std::env::var("REPAIR_BATCH_SIZE")
             .ok()
             .and_then(|v| v.parse().ok())
-            .unwrap_or(10);
+            .unwrap_or(100);
 
-        // Re-process all blocks in batches
         let mut current_height: i64 = 1;
+        let mut box_asset_id: i64 = 0;
         let mut batch_count: usize = 0;
+        let mut total_assets: i64 = 0;
+        let mut total_tokens: i64 = 0;
 
         while current_height <= max_height {
-            let batch_end = std::cmp::min(current_height + self.batch_size as i64 - 1, max_height);
+            let batch_end = std::cmp::min(current_height + repair_batch_size - 1, max_height);
 
             let blocks = self
                 .fetch_blocks_parallel(current_height, batch_end)
                 .await?;
 
-            let mut processor = self.processor.lock().await;
-            for block in blocks {
-                processor.process_block(&block)?;
+            // Lightweight extraction: only box_assets and tokens
+            // Collect all inserts first, then batch-execute in a transaction
+            let mut asset_inserts: Vec<(i64, String, String, i64, i32)> = Vec::new();
+            let mut token_inserts: Vec<(String, String, i64, Option<String>, Option<String>, Option<String>, Option<i32>, i64)> = Vec::new();
+
+            for block in &blocks {
+                let header = match block.get("header") {
+                    Some(h) => h,
+                    None => continue,
+                };
+                let height = header.get("height").and_then(|v| v.as_i64()).unwrap_or(0);
+                let block_txs = match block.get("blockTransactions") {
+                    Some(bt) => bt,
+                    None => continue,
+                };
+                let transactions = match block_txs.get("transactions").and_then(|t| t.as_array()) {
+                    Some(txs) => txs,
+                    None => continue,
+                };
+
+                for tx in transactions {
+                    let inputs = tx.get("inputs").and_then(|v| v.as_array());
+                    let first_input_box_id = inputs
+                        .and_then(|inp| inp.first())
+                        .and_then(|i| i.get("boxId"))
+                        .and_then(|v| v.as_str());
+
+                    let outputs = match tx.get("outputs").and_then(|v| v.as_array()) {
+                        Some(o) => o,
+                        None => continue,
+                    };
+                    for output in outputs {
+                        let box_id = output.get("boxId").and_then(|v| v.as_str()).unwrap_or("");
+                        let additional_registers = output.get("additionalRegisters");
+                        let assets = output.get("assets").and_then(|v| v.as_array());
+
+                        if let Some(assets) = assets {
+                            for (asset_idx, asset) in assets.iter().enumerate() {
+                                let token_id = match asset.get("tokenId").and_then(|v| v.as_str()) {
+                                    Some(id) => id,
+                                    None => continue,
+                                };
+                                let amount = asset.get("amount").and_then(|v| v.as_i64()).unwrap_or(0);
+
+                                box_asset_id += 1;
+                                asset_inserts.push((
+                                    box_asset_id,
+                                    box_id.to_string(),
+                                    token_id.to_string(),
+                                    amount,
+                                    asset_idx as i32,
+                                ));
+                                total_assets += 1;
+
+                                // Check for minting
+                                if asset_idx == 0 {
+                                    if let Some(first_box) = first_input_box_id {
+                                        if first_box == token_id {
+                                            let (name, description, token_type, decimals) =
+                                                processor::extract_token_metadata_pub(additional_registers);
+                                            token_inserts.push((
+                                                token_id.to_string(),
+                                                box_id.to_string(),
+                                                amount,
+                                                name,
+                                                description,
+                                                token_type,
+                                                decimals,
+                                                height,
+                                            ));
+                                            total_tokens += 1;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            drop(processor);
+
+            // Batch insert in a single transaction
+            self.db.execute_transaction(|conn| {
+                for (id, box_id, token_id, amount, asset_index) in &asset_inserts {
+                    conn.execute(
+                        "INSERT INTO box_assets (id, box_id, token_id, amount, asset_index) VALUES (?, ?, ?, ?, ?)",
+                        duckdb::params![id, box_id, token_id, amount, asset_index],
+                    )?;
+                }
+                for (token_id, box_id, amount, name, description, token_type, decimals, height) in &token_inserts {
+                    conn.execute(
+                        "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, token_type, decimals, creation_height) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                        duckdb::params![token_id, box_id, amount, name, description, token_type, decimals, height],
+                    )?;
+                }
+                Ok(())
+            })?;
 
             batch_count += 1;
-            if batch_count % checkpoint_interval == 0 {
+            if batch_count % 10 == 0 {
                 if let Err(e) = self.db.checkpoint() {
                     tracing::warn!("Checkpoint failed during repair: {}", e);
                 }
             }
 
-            let batch_size = (batch_end - current_height + 1) as u64;
-            self.blocks_synced.fetch_add(batch_size, Ordering::SeqCst);
-            self.local_height.store(batch_end, Ordering::SeqCst);
+            let blocks_done = (batch_end - current_height + 1) as u64;
+            self.blocks_synced.fetch_add(blocks_done, Ordering::SeqCst);
 
-            let progress = current_height as f64 / max_height as f64;
-            tracing::info!(
-                "Repair progress: height {}/{} ({:.1}%)",
-                batch_end,
-                max_height,
-                progress * 100.0
-            );
+            let progress = batch_end as f64 / max_height as f64;
+            if batch_count % 50 == 0 {
+                tracing::info!(
+                    "Repair: {}/{} ({:.1}%) - {} assets, {} tokens so far",
+                    batch_end, max_height, progress * 100.0, total_assets, total_tokens
+                );
+            }
 
             current_height = batch_end + 1;
         }
@@ -494,8 +591,19 @@ impl SyncService {
             tracing::warn!("Final checkpoint failed during repair: {}", e);
         }
 
+        // Reset processor counters from the now-populated tables
+        {
+            let mut processor = self.processor.lock().await;
+            *processor = BlockProcessor::new(self.db.clone());
+        }
+
+        self.is_repairing.store(false, Ordering::SeqCst);
         self.is_syncing.store(false, Ordering::SeqCst);
-        tracing::info!("Asset repair complete. Re-processed {} blocks.", max_height);
+        self.local_height.store(max_height, Ordering::SeqCst);
+        tracing::info!(
+            "Asset repair complete. {} blocks, {} assets, {} tokens.",
+            max_height, total_assets, total_tokens
+        );
 
         Ok(())
     }
