@@ -407,4 +407,96 @@ impl SyncService {
     pub fn get_primary_node(&self) -> Option<&NodeClient> {
         self.nodes.first()
     }
+
+    /// Repair box_assets, inputs, and data_inputs tables by clearing and re-processing all blocks.
+    /// This fixes data loss caused by the counter initialization bug where synthetic IDs
+    /// would collide after process restarts.
+    pub async fn repair_assets(&self) -> Result<()> {
+        if self.is_syncing.load(Ordering::SeqCst) {
+            anyhow::bail!("Cannot repair while sync is in progress");
+        }
+
+        self.is_syncing.store(true, Ordering::SeqCst);
+        self.blocks_synced.store(0, Ordering::SeqCst);
+        self.sync_start_time.store(
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_secs(),
+            Ordering::SeqCst,
+        );
+
+        let max_height = self.db.get_sync_height()?;
+        tracing::info!("Starting asset repair: clearing box_assets, inputs, data_inputs and re-processing {} blocks", max_height);
+
+        // Delete the tables with the counter bug
+        self.db.execute_batch(
+            "DELETE FROM box_assets;
+             DELETE FROM inputs;
+             DELETE FROM data_inputs;
+             DELETE FROM tokens;"
+        )?;
+        self.db.checkpoint()?;
+
+        tracing::info!("Cleared box_assets, inputs, data_inputs, tokens tables. Re-processing blocks...");
+
+        // Reset processor counters (they'll be 0 since tables are empty)
+        {
+            let mut processor = self.processor.lock().await;
+            *processor = BlockProcessor::new(self.db.clone());
+        }
+
+        let checkpoint_interval: usize = std::env::var("SYNC_CHECKPOINT_INTERVAL")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .unwrap_or(10);
+
+        // Re-process all blocks in batches
+        let mut current_height: i64 = 1;
+        let mut batch_count: usize = 0;
+
+        while current_height <= max_height {
+            let batch_end = std::cmp::min(current_height + self.batch_size as i64 - 1, max_height);
+
+            let blocks = self
+                .fetch_blocks_parallel(current_height, batch_end)
+                .await?;
+
+            let mut processor = self.processor.lock().await;
+            for block in blocks {
+                processor.process_block(&block)?;
+            }
+            drop(processor);
+
+            batch_count += 1;
+            if batch_count % checkpoint_interval == 0 {
+                if let Err(e) = self.db.checkpoint() {
+                    tracing::warn!("Checkpoint failed during repair: {}", e);
+                }
+            }
+
+            let batch_size = (batch_end - current_height + 1) as u64;
+            self.blocks_synced.fetch_add(batch_size, Ordering::SeqCst);
+            self.local_height.store(batch_end, Ordering::SeqCst);
+
+            let progress = current_height as f64 / max_height as f64;
+            tracing::info!(
+                "Repair progress: height {}/{} ({:.1}%)",
+                batch_end,
+                max_height,
+                progress * 100.0
+            );
+
+            current_height = batch_end + 1;
+        }
+
+        if let Err(e) = self.db.checkpoint() {
+            tracing::warn!("Final checkpoint failed during repair: {}", e);
+        }
+
+        self.is_syncing.store(false, Ordering::SeqCst);
+        tracing::info!("Asset repair complete. Re-processed {} blocks.", max_height);
+
+        Ok(())
+    }
 }

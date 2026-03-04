@@ -88,6 +88,8 @@ pub fn routes(state: Arc<AppState>) -> Router<Arc<AppState>> {
         .route("/search", get(search::search))
         // ErgoTree utilities
         .route("/utils/ergoTreeToAddress/:ergoTree", get(search::ergo_tree_to_address))
+        // Admin / repair
+        .route("/repair/assets", post(status::repair_assets))
         // Wallet (proxied to node)
         .route("/wallet/status", get(wallet::get_status))
         .route("/wallet/addresses", get(wallet::get_addresses))

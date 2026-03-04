@@ -81,6 +81,25 @@ pub async fn get_status(
     }))
 }
 
+/// POST /repair/assets - Repair box_assets, inputs, data_inputs by re-processing all blocks
+pub async fn repair_assets(
+    State(state): State<Arc<AppState>>,
+) -> Result<Json<serde_json::Value>, (StatusCode, String)> {
+    let sync_service = state.sync_service.clone();
+
+    // Run repair in background so we don't block the HTTP response
+    tokio::spawn(async move {
+        if let Err(e) = sync_service.repair_assets().await {
+            tracing::error!("Asset repair failed: {}", e);
+        }
+    });
+
+    Ok(Json(serde_json::json!({
+        "status": "repair started",
+        "message": "Repair is running in background. Monitor progress via GET /status"
+    })))
+}
+
 fn get_memory_usage() -> Option<u64> {
     // Try to read from /proc/self/status on Linux
     #[cfg(target_os = "linux")]
