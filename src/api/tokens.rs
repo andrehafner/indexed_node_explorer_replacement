@@ -226,12 +226,12 @@ pub async fn get_tokens_by_address(
     let tokens = state
         .db
         .query_all(
-            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals
+            "SELECT ba.token_id, SUM(ba.amount) as total, t.name, t.decimals, t.token_type
              FROM box_assets ba
              JOIN boxes b ON ba.box_id = b.box_id
              LEFT JOIN tokens t ON ba.token_id = t.token_id
              WHERE b.address = ? AND b.spent_tx_id IS NULL
-             GROUP BY ba.token_id, t.name, t.decimals
+             GROUP BY ba.token_id, t.name, t.decimals, t.token_type
              ORDER BY total DESC",
             [&address],
             |row| {
@@ -240,6 +240,7 @@ pub async fn get_tokens_by_address(
                     amount: row.get(1)?,
                     name: row.get(2)?,
                     decimals: row.get(3)?,
+                    token_type: row.get(4)?,
                 })
             },
         )

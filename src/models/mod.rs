@@ -162,16 +162,24 @@ pub struct Balance {
     pub tokens: Vec<TokenBalance>,
 }
 
+/// Confirmed/unconfirmed balance wrapper (matches official explorer format)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct BalanceResponse {
+    pub confirmed: Balance,
+    pub unconfirmed: Balance,
+}
+
 /// Token balance
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct TokenBalance {
     pub token_id: String,
     pub amount: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    pub decimals: Option<i32>,
     pub name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub decimals: Option<i32>,
+    pub token_type: Option<String>,
 }
 
 /// Mempool transaction

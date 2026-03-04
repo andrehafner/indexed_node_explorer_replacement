@@ -19,14 +19,45 @@ pub struct BlockProcessor {
 
 impl BlockProcessor {
     pub fn new(db: Database) -> Self {
+        // Restore counters from existing data to avoid ID collisions on restart
+        let box_asset_id = db
+            .query_one("SELECT COALESCE(MAX(id), 0) FROM box_assets", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+        let input_id = db
+            .query_one("SELECT COALESCE(MAX(id), 0) FROM inputs", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+        let data_input_id = db
+            .query_one("SELECT COALESCE(MAX(id), 0) FROM data_inputs", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+        let global_tx_index = db
+            .query_one("SELECT COALESCE(MAX(global_index), 0) FROM transactions", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+        let global_box_index = db
+            .query_one("SELECT COALESCE(MAX(global_index), 0) FROM boxes", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+        let global_block_index = db
+            .query_one("SELECT COALESCE(MAX(global_index), 0) FROM blocks", [], |row| row.get(0))
+            .unwrap_or(Some(0))
+            .unwrap_or(0);
+
+        tracing::info!(
+            "Restored counters: box_asset_id={}, input_id={}, data_input_id={}, global_tx={}, global_box={}, global_block={}",
+            box_asset_id, input_id, data_input_id, global_tx_index, global_box_index, global_block_index
+        );
+
         Self {
             db,
-            global_tx_index: 0,
-            global_box_index: 0,
-            global_block_index: 0,
-            box_asset_id: 0,
-            input_id: 0,
-            data_input_id: 0,
+            global_tx_index,
+            global_box_index,
+            global_block_index,
+            box_asset_id,
+            input_id,
+            data_input_id,
         }
     }
 
@@ -304,14 +335,15 @@ impl BlockProcessor {
 
                 if !exists {
                     conn.execute(
-                        "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, decimals, creation_height)
-                         VALUES (?, ?, ?, ?, ?, ?, ?)",
+                        "INSERT INTO tokens (token_id, box_id, emission_amount, name, description, token_type, decimals, creation_height)
+                         VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
                         params![
                             token.token_id,
                             token.box_id,
                             token.emission_amount,
                             token.name,
                             token.description,
+                            token.token_type,
                             token.decimals,
                             token.creation_height
                         ],
@@ -552,13 +584,14 @@ impl BlockProcessor {
         if asset_idx == 0 {
             let is_minting = first_input_box_id.map(|id| id == token_id).unwrap_or(false);
             if is_minting {
-                let (name, description, decimals) = extract_token_metadata(registers);
+                let (name, description, token_type, decimals) = extract_token_metadata(registers);
                 collected.tokens.push(TokenData {
                     token_id: token_id.to_string(),
                     box_id: box_id.to_string(),
                     emission_amount: amount,
                     name,
                     description,
+                    token_type,
                     decimals,
                     creation_height: height,
                 });
@@ -700,6 +733,7 @@ struct TokenData {
     emission_amount: i64,
     name: Option<String>,
     description: Option<String>,
+    token_type: Option<String>,
     decimals: Option<i32>,
     creation_height: i64,
 }
@@ -710,10 +744,11 @@ struct AddressData {
 }
 
 /// Extract token metadata from box registers
-fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<String>, Option<i32>) {
+/// Returns (name, description, token_type, decimals)
+fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<String>, Option<String>, Option<i32>) {
     let registers = match registers {
         Some(r) => r,
-        None => return (None, None, None),
+        None => return (None, None, None, None),
     };
 
     let name = registers
@@ -731,7 +766,14 @@ fn extract_token_metadata(registers: Option<&Value>) -> (Option<String>, Option<
         .and_then(|v| v.as_str())
         .and_then(decode_sigma_int);
 
-    (name, description, decimals)
+    // Tokens with R4 (name) register follow EIP-004 standard
+    let token_type = if name.is_some() {
+        Some("EIP-004".to_string())
+    } else {
+        None
+    };
+
+    (name, description, token_type, decimals)
 }
 
 /// Decode a Sigma-encoded Coll[Byte] (type 0e) to a UTF-8 string
